@@ -1,0 +1,58 @@
+{
+  "strategy": "version-based",
+  "autoDetectVersion": false,
+  "conflictResolution": "fail",
+  "versionMapping": {
+    "11": {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-db-postgres-11"
+        },
+        {
+          "project": "my-project-staging",
+          "instance": "staging-db-postgres-11-xxx"
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-postgres-11"
+      }
+    },
+    "13": {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-postgres-v13"
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-postgres-13"
+      }
+    },
+    "14": {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-14-postgres"
+        },
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-14-postgres"
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-postgres-14"
+      }
+    }
+  },
+  "options": {
+    "dryRun": true,
+    "verbose": true,
+    "retryAttempts": 3,
+    "maxParallel": 3,
+    "stopOnError": false
+  }
+}

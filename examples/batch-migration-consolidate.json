@@ -1,0 +1,30 @@
+{
+  "strategy": "consolidate",
+  "conflictResolution": "prefix",
+  "sources": [
+    {
+      "project": "my-project-staging",
+      "instance": "staging-db-postgres-11"
+    },
+    {
+      "project": "my-project-staging",
+      "instance": "staging-xxx-db-postgres"
+    },
+    {
+      "project": "my-project-staging",
+      "instance": "staging-xxx-db-postgres"
+    }
+  ],
+  "targets": [
+    {
+      "project": "my-project-production",
+      "instance": "production-consolidated-db"
+    }
+  ],
+  "options": {
+    "dryRun": false,
+    "verbose": true,
+    "retryAttempts": 3,
+    "maxParallel": 2
+  }
+}

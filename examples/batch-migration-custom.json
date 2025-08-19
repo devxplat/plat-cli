@@ -1,0 +1,58 @@
+{
+  "strategy": "custom-mapping",
+  "conflictResolution": "suffix",
+  "migrations": [
+    {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-postgres"
+        },
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-postgresql"
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-communications-db"
+      },
+      "databases": "all",
+      "conflictResolution": "prefix"
+    },
+    {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-postgres",
+          "databases": ["xxx", "reporting"]
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-xxx-db"
+      },
+      "databases": ["xxx", "reporting"]
+    },
+    {
+      "sources": [
+        {
+          "project": "my-project-staging",
+          "instance": "staging-xxx-db-postgres-xx"
+        }
+      ],
+      "target": {
+        "project": "my-project-production",
+        "instance": "production-xxx-db"
+      },
+      "databases": "all"
+    }
+  ],
+  "options": {
+    "dryRun": false,
+    "verbose": true,
+    "retryAttempts": 5,
+    "maxParallel": 2,
+    "stopOnError": true
+  }
+}

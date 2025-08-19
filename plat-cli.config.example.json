@@ -1,0 +1,21 @@
+{
+  "gcp": {
+    "defaultProject": "my-project-id",
+    "keyFile": "/path/to/service-account.json",
+    "region": "us-central1"
+  },
+  "logging": {
+    "level": "info",
+    "quiet": false
+  },
+  "ui": {
+    "compact": true,
+    "theme": "default"
+  },
+  "tools": {
+    "cloudsql": {
+      "defaultMigrationMode": "full",
+      "dryRunDefault": false
+    }
+  }
+}

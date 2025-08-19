@@ -1,0 +1,25 @@
+{
+  "source": {
+    "project": "my-source-project",
+    "instance": "my-source-instance",
+    "databases": ["app-db", "analytics-db", "user-db"]
+  },
+  "target": {
+    "project": "my-target-project",
+    "instance": "my-target-instance"
+  },
+  "options": {
+    "includeAll": false,
+    "retryAttempts": 3,
+    "jobs": 2,
+    "forceCompatibility": false,
+    "schemaOnly": false,
+    "dataOnly": false,
+    "excludeTableData": []
+  },
+  "logger": {
+    "level": "info",
+    "enableFile": true,
+    "logDir": "./logs"
+  }
+}

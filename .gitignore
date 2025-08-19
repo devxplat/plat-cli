@@ -1,0 +1,97 @@
+#       OS        #
+###################
+.DS_Store
+.idea
+Thumbs.db
+tmp/
+temp/
+secret.json
+secret.txt
+
+.claude/
+.cursor/
+.cursorrules/
+.cursorrules.md/
+.cursorrules.txt/
+.cursorrules.yml/
+
+#       IA        #
+###################
+*.ipynb_checkpoints
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sage.py
+*.ipynb
+# VSCode, Jupyter, and other interactive/AI/ML artifacts
+.vscode/
+*.ai
+*.mlmodel
+*.onnx
+*.tflite
+*.pb
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.joblib
+*.pkl
+*.npz
+*.npy
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.arrow
+*.rdata
+*.rds
+*.sqlite
+*.db
+*.db3
+*.sqlite3
+*.log
+*.tensorboard
+runs/
+wandb/
+mlruns/
+# Ignore common AI/ML experiment folders
+output/
+outputs/
+results/
+experiments/
+# Ignore Jupyter Notebook checkpoints and metadata
+.ipynb_checkpoints/
+# Ignore cursor/IDE state
+*.sublime-workspace
+*.sublime-project
+*.code-workspace
+*.swp
+*.swo
+*.bak
+*.tmp
+
+
+#     Node.js     #
+###################
+node_modules
+
+
+#       NYC       #
+###################
+coverage
+*.lcov
+.nyc_output
+
+
+#      Files      #
+###################
+*.log
+
+#  Environment    #
+###################
+.env
+.env.local
+.env.development
+.env.test
+.env.production
