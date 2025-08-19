@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { StatusMessage, Badge } from '@inkjs/ui';
+import { colorPalettes } from '../theme/custom-theme.js';
 
 /**
  * Simple ExecutionResults component using React.createElement
@@ -56,49 +57,17 @@ const ExecutionResults = ({ result, error, onContinue }) => {
     );
   }
 
+  // Simple completion message since progress tracker already showed detailed results
   return React.createElement(
     Box,
-    { flexDirection: 'column', gap: 2 },
+    { flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', paddingY: 2 },
     React.createElement(
-      Box,
-      { flexDirection: 'row', gap: 2 },
-      React.createElement(Badge, { color: 'green' }, 'SUCCESS'),
-      React.createElement(
-        Text,
-        { bold: true, color: 'green' },
-        result.message || 'Operation completed successfully'
-      )
+      Text,
+      { color: '#FF00A7', bold: true },
+      '✨ Migration Complete!'
     ),
 
-    result.databases &&
-      React.createElement(
-        Box,
-        { flexDirection: 'column', gap: 1 },
-        React.createElement(
-          Text,
-          { color: 'cyan' },
-          `✅ Migrated ${result.databases.length} database(s):`
-        ),
-        React.createElement(
-          Text,
-          { color: 'gray' },
-          result.databases.join(', ')
-        )
-      ),
-
-    result.duration &&
-      React.createElement(
-        Box,
-        { flexDirection: 'row', gap: 2 },
-        React.createElement(Text, { color: 'gray' }, 'Duration:'),
-        React.createElement(
-          Text,
-          null,
-          `${Math.round(result.duration / 1000)}s`
-        )
-      ),
-
-    React.createElement(Text, { color: 'gray' }, 'Press any key to continue...')
+    React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Press any key to continue...')
   );
 };
 

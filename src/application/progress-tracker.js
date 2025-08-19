@@ -1,6 +1,9 @@
 import React from 'react';
 import { render, Box, Text, Static } from 'ink';
-import { Spinner, StatusMessage, ProgressBar } from '@inkjs/ui';
+import { Spinner, StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
+import customTheme from '../interfaces/tui/theme/custom-theme.js';
+import CustomSpinner, { ShimmerSpinner } from '../interfaces/tui/components/CustomSpinner.js';
+import CustomProgressBar from '../interfaces/tui/components/CustomProgressBar.js';
 
 /**
  * Modern Progress Tracker using Ink UI components
@@ -531,7 +534,7 @@ class ModernProgressTracker {
           { items: [{ id: 'header' }] },
           (item) => React.createElement(
             Box,
-            { key: item.id, borderStyle: 'round', borderColor: 'cyan', padding: 1 },
+            { key: item.id, borderStyle: 'round', borderColor: '#F204F1', padding: 1 },
             React.createElement(
               Text,
               { bold: true },
@@ -560,13 +563,25 @@ class ModernProgressTracker {
           React.createElement(
             Box,
             { flexDirection: 'column', gap: 1 },
-            React.createElement(StatusMessage, {
-              variant: 'success',
-              children: 'Migration completed successfully'
-            }),
+            // Show completion message in spinner line
+            React.createElement(
+              Box,
+              { gap: 2 },
+              React.createElement(
+                Text,
+                { color: '#FF00A7', bold: true },
+                '✨ Migration Complete!'
+              ),
+              React.createElement(
+                Text,
+                { dimColor: true },
+                `(${self._formatTime(progressData.elapsedSeconds)})`
+              )
+            ),
+            // Results summary
             progressData.completionResults && React.createElement(
               Box,
-              { flexDirection: 'column', marginLeft: 2 },
+              { flexDirection: 'column', marginTop: 1 },
               progressData.completionResults.processedDatabases && React.createElement(
                 Text,
                 null,
@@ -580,7 +595,7 @@ class ModernProgressTracker {
               progressData.completionResults.duration && React.createElement(
                 Text,
                 null,
-                `Duration: ${progressData.completionResults.duration}`
+                `Total duration: ${progressData.completionResults.duration}`
               )
             )
           ) :
@@ -594,12 +609,17 @@ class ModernProgressTracker {
           React.createElement(
             Box,
             { flexDirection: 'column', gap: 1 },
-            // Always show spinner with overall status
+            // Always show shimmer spinner with overall status for classic CLI
             React.createElement(
               Box,
               { gap: 2 },
-              React.createElement(Spinner, {
-                label: 'Migration in progress...'
+              React.createElement(ShimmerSpinner, {
+                label: 'Migration in progress...',
+                isVisible: true,
+                status: 'running',
+                baseColor: '#F204F1',
+                glowSpeed: 100,
+                glowWidth: 3
               }),
               React.createElement(
                 Text,
@@ -623,8 +643,11 @@ class ModernProgressTracker {
                 React.createElement(
                   Box,
                   { width: 50 },
-                  React.createElement(ProgressBar, {
-                    value: self._calculatePhaseProgress() // ProgressBar expects 0-100
+                  React.createElement(CustomProgressBar, {
+                    value: self._calculatePhaseProgress(), // ProgressBar expects 0-100
+                    width: 30,
+                    style: 'gradient',
+                    showPercentage: true
                   })
                 ),
                 // Detailed status
@@ -654,7 +677,13 @@ class ModernProgressTracker {
       );
     };
 
-    this.inkInstance = render(React.createElement(ProgressComponent));
+    this.inkInstance = render(
+      React.createElement(
+        ThemeProvider,
+        { theme: customTheme },
+        React.createElement(ProgressComponent)
+      )
+    );
   }
 
   _updateInkRender() {

@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { ThemeProvider, defaultTheme, Spinner } from '@inkjs/ui';
+import { ThemeProvider, Spinner } from '@inkjs/ui';
+import customTheme, { colorPalettes } from './theme/custom-theme.js';
+import CustomSpinner, { FlowSpinner } from './components/CustomSpinner.js';
 
 import MainMenu from './components/MainMenu.js';
 import ConfigurationForm from './components/ConfigurationForm.js';
 import ConfigurationSummary from './components/ConfigurationSummary.js';
-import ProgressDisplay, {
-  MultiStepProgress
-} from './components/ProgressDisplay.js';
 import ExecutionResults from './components/ExecutionResults.js';
 
 /**
@@ -20,20 +19,30 @@ const InkApp = ({ coordinator, logger, onExit }) => {
   const [executionResult, setExecutionResult] = useState(null);
   const [executionError, setExecutionError] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
-  const [executionProgress, setExecutionProgress] = useState({
-    steps: [],
-    currentStep: 0,
-    currentProgress: 0
-  });
 
   // Handle keyboard input for navigation
   useInput((input, key) => {
-    // Alt+Q to quit application (safer than Ctrl+Q which conflicts with Cursor/VSCode)
+    // Multiple quit options for better compatibility
+    // Alt+Q (works better on Linux/Mac)
     if (key.alt && input === 'q') {
       if (currentView === 'executing') {
         // Don't allow exit during execution
         return;
       }
+      handleExit();
+    }
+    
+    // Ctrl+X (more reliable on Windows)
+    if (key.ctrl && input === 'x') {
+      if (currentView === 'executing') {
+        // Don't allow exit during execution
+        return;
+      }
+      handleExit();
+    }
+    
+    // Simple 'q' when in main menu (intuitive)
+    if (input === 'q' && currentView === 'menu') {
       handleExit();
     }
 
@@ -133,33 +142,6 @@ const InkApp = ({ coordinator, logger, onExit }) => {
     try {
       // Check if it's a batch configuration
       if (configuration?.isBatch && configuration?.mapping) {
-        // Set up batch progress tracking
-        const progressSteps = [
-          'Initialization',
-          'Validation',
-          'Execution',
-          'Consolidation',
-          'Reporting'
-        ];
-
-        setExecutionProgress({
-          steps: progressSteps,
-          currentStep: 0,
-          currentProgress: 0
-        });
-
-        // Create progress callback for batch
-        const progressCallback = (progress) => {
-          const stepIndex = progressSteps.indexOf(progress.phase) || 0;
-          setExecutionProgress({
-            steps: progressSteps,
-            currentStep: stepIndex,
-            currentProgress: progress.current || 0,
-            total: progress.total || 100,
-            status: progress.status
-          });
-        };
-
         // Now load the module and switch to executing view
         const { default: BatchMigrationCoordinator } = await import(
           '../../application/batch-migration-coordinator.js'
@@ -176,9 +158,10 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           retryFailed: true
         });
 
+        // The progress tracker will handle all visual feedback
         const result = await batchCoordinator.executeBatch(
           configuration.mapping,
-          progressCallback
+          null // Progress callback handled internally by coordinator
         );
 
         setExecutionResult(result);
@@ -187,35 +170,11 @@ const InkApp = ({ coordinator, logger, onExit }) => {
         // Switch to executing view for single migration
         setCurrentView('executing');
         
-        // Set up single migration progress tracking
-        const progressSteps = [
-          'Validating configuration',
-          'Connecting to source',
-          'Connecting to target',
-          'Executing operation',
-          'Finalizing'
-        ];
-
-        setExecutionProgress({
-          steps: progressSteps,
-          currentStep: 0,
-          currentProgress: 0
-        });
-
-        // Create progress callback
-        const progressCallback = (step, progress) => {
-          setExecutionProgress((prev) => ({
-            ...prev,
-            currentStep: step,
-            currentProgress: progress
-          }));
-        };
-
-        // Execute the tool
+        // Execute the tool - progress tracker handles all visual feedback
         const result = await coordinator.execute(
           selectedTool,
           configuration,
-          progressCallback
+          null // Progress callback handled internally by coordinator
         );
 
         setExecutionResult(result);
@@ -297,8 +256,10 @@ const InkApp = ({ coordinator, logger, onExit }) => {
         return React.createElement(
           Box,
           { flexDirection: 'row', gap: 1, padding: 2 },
-          React.createElement(Spinner, {
-            label: 'Validating connections and calculating estimates...'
+          React.createElement(FlowSpinner, {
+            label: 'Validating connections and calculating estimates...',
+            isVisible: true,
+            status: 'running'
           })
         );
 
@@ -318,45 +279,37 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           React.createElement(
             Box,
             { flexDirection: 'row', gap: 1 },
-            React.createElement(Spinner, {
-              label: 'Initializing migration engine...'
+            React.createElement(CustomSpinner, {
+              label: 'Initializing migration engine...',
+              isVisible: true,
+              status: 'running',
+              compact: false
             })
           ),
           React.createElement(
             Text,
-            { color: 'gray', dimColor: true, marginTop: 1 },
+            { color: colorPalettes.dust.tertiary, marginTop: 1 },
             'Loading modules and preparing connections...'
           ),
           React.createElement(
             Text,
-            { color: 'cyan', dimColor: true },
+            { color: colorPalettes.dust.secondary },
             'This may take a few seconds...'
           )
         );
 
       case 'executing':
+        // The progress tracker (managed by coordinator) handles all the display
+        // It shows the ShimmerSpinner, progress bars, and all migration details
+        // We just show a minimal placeholder since progress tracker has its own Ink instance
         return React.createElement(
           Box,
-          { flexDirection: 'column', gap: 2, padding: 1 },
+          { flexDirection: 'column', gap: 1 },
           React.createElement(
             Text,
-            { bold: true, color: 'cyan' },
-            `🚀 Executing ${selectedTool}`
-          ),
-          React.createElement(MultiStepProgress, {
-            steps: executionProgress.steps,
-            currentStep: executionProgress.currentStep,
-            currentProgress: executionProgress.currentProgress
-          }),
-          React.createElement(ProgressDisplay, {
-            isActive: true,
-            progress: executionProgress.currentProgress,
-            message:
-              executionProgress.steps[executionProgress.currentStep] ||
-              'Processing',
-            status: 'running',
-            compact: false
-          })
+            { color: colorPalettes.dust.tertiary },
+            '// Migration progress is displayed above //'
+          )
         );
 
       case 'results':
@@ -373,7 +326,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           { flexDirection: 'column', gap: 1, padding: 2 },
           React.createElement(
             Text,
-            { color: 'red', bold: true },
+            { color: colorPalettes.classyPalette[4], bold: true },
             '🚫 Connection Failed'
           ),
           React.createElement(
@@ -383,7 +336,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
               paddingX: 2,
               paddingY: 1,
               borderStyle: 'round',
-              borderColor: 'red'
+              borderColor: colorPalettes.classyPalette[4]
             },
             React.createElement(
               Text,
@@ -396,7 +349,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
             { flexDirection: 'column', gap: 1, marginTop: 1 },
             React.createElement(
               Text,
-              { color: 'yellow', bold: true },
+              { color: colorPalettes.genericGradient[3], bold: true },
               'What would you like to do?'
             ),
             React.createElement(
@@ -404,18 +357,18 @@ const InkApp = ({ coordinator, logger, onExit }) => {
               { flexDirection: 'column', gap: 0, marginTop: 1 },
               React.createElement(
                 Text,
-                { color: 'cyan' },
+                { color: '#7e9400' },
                 '[R] Retry connection'
               ),
               React.createElement(
                 Text,
-                { color: 'blue' },
+                { color: '#7e9400' },
                 '[Esc] Back to configuration'
               ),
               React.createElement(
                 Text,
-                { color: 'gray' },
-                '[Alt+Q] Quit application'
+                { color: '#ac8500' },
+                '[Ctrl+X] Quit application'
               )
             )
           )
@@ -424,7 +377,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
       default:
         return React.createElement(
           Text,
-          { color: 'red' },
+          { color: colorPalettes.classyPalette[4] },
           `Unknown view: ${currentView}`
         );
     }
@@ -432,7 +385,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
 
   return React.createElement(
     ThemeProvider,
-    { theme: defaultTheme },
+    { theme: customTheme },
     React.createElement(
       Box,
       { flexDirection: 'column', padding: 1 },

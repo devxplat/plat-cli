@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { colors } from './colors.js';
 
 // Import application services - using dynamic imports to avoid circular dependencies
 // Services are imported dynamically in init() method to avoid circular dependencies
@@ -274,20 +275,20 @@ class ClassicCLI {
       const validationErrors = this.validateMigrationParams(options);
       
       if (validationErrors.length > 0) {
-        console.log(chalk.red('\n⚠️  Missing required parameters:\n'));
+        console.log(colors.error('\n⚠️  Missing required parameters:\n'));
         validationErrors.forEach(error => console.log('  ' + error));
-        console.log(chalk.yellow('\n💡 Tips:'));
-        console.log(chalk.gray('  • You can use environment variables for sensitive data'));
-        console.log(chalk.gray('  • Set PGPASSWORD_SOURCE for source database password'));
-        console.log(chalk.gray('  • Set PGPASSWORD_TARGET for target database password'));
-        console.log(chalk.gray('  • Set CLOUDSQL_SOURCE_IP and CLOUDSQL_TARGET_IP for IPs'));
-        console.log(chalk.gray('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
-        console.log(chalk.gray('  • Use --sources-file or --mapping-file for batch migrations'));
+        console.log(colors.warning('\n💡 Tips:'));
+        console.log(colors.tertiary('  • You can use environment variables for sensitive data'));
+        console.log(colors.tertiary('  • Set PGPASSWORD_SOURCE for source database password'));
+        console.log(colors.tertiary('  • Set PGPASSWORD_TARGET for target database password'));
+        console.log(colors.tertiary('  • Set CLOUDSQL_SOURCE_IP and CLOUDSQL_TARGET_IP for IPs'));
+        console.log(colors.tertiary('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
+        console.log(colors.tertiary('  • Use --sources-file or --mapping-file for batch migrations'));
         console.log('');
         process.exit(1);
       }
 
-      console.log(chalk.cyan('🚀 Starting CloudSQL Migration'));
+      console.log(colors.primary('🚀 Starting CloudSQL Migration'));
 
       // Create configuration from CLI arguments
       const config = OperationConfig.fromCliArgs({
@@ -307,7 +308,7 @@ class ClassicCLI {
       if (!options.dryRun) {
         const confirmed = await this.confirmOperation(config);
         if (!confirmed) {
-          console.log(chalk.yellow('Operation cancelled by user'));
+          console.log(colors.warning('Operation cancelled by user'));
           return;
         }
       }
@@ -324,9 +325,9 @@ class ClassicCLI {
       // Display results
       this.displayResults(result, config);
     } catch (error) {
-      console.log(chalk.red('❌ Migration failed:'), error.message);
+      console.log(colors.error('❌ Migration failed:'), error.message);
       if (options.verbose) {
-        console.log(chalk.gray(error.stack));
+        console.log(colors.tertiary(error.stack));
       }
       process.exit(1);
     }
@@ -337,7 +338,7 @@ class ClassicCLI {
    */
   async handleBatchMigration(options) {
     try {
-      console.log(chalk.cyan('🚀 Starting Batch CloudSQL Migration'));
+      console.log(colors.primary('🚀 Starting Batch CloudSQL Migration'));
 
       // Import required modules
       const { default: InstanceParser } = await import(
@@ -367,7 +368,7 @@ class ClassicCLI {
       } else if (options.sourcesFile) {
         // Sources file provided, need target from CLI
         if (!options.targetProject || !options.targetInstance) {
-          console.log(chalk.red('❌ Target project and instance required with --sources-file'));
+          console.log(colors.error('❌ Target project and instance required with --sources-file'));
           process.exit(1);
         }
 
@@ -401,15 +402,15 @@ class ClassicCLI {
       // Validate mapping
       const validation = mapping.validate();
       if (!validation.valid) {
-        console.log(chalk.red('❌ Invalid mapping configuration:'));
-        validation.errors.forEach(e => console.log(chalk.red(`  - ${e}`)));
+        console.log(colors.error('❌ Invalid mapping configuration:'));
+        validation.errors.forEach(e => console.log(colors.error(`  - ${e}`)));
         process.exit(1);
       }
 
       // Display warnings
       if (validation.warnings.length > 0) {
-        console.log(chalk.yellow('⚠️ Warnings:'));
-        validation.warnings.forEach(w => console.log(chalk.yellow(`  - ${w}`)));
+        console.log(colors.warning('⚠️ Warnings:'));
+        validation.warnings.forEach(w => console.log(colors.warning(`  - ${w}`)));
       }
 
       // Display mapping summary
@@ -419,7 +420,7 @@ class ClassicCLI {
       if (!options.dryRun) {
         const confirmed = await this.confirmBatchOperation(mapping, options);
         if (!confirmed) {
-          console.log(chalk.yellow('Operation cancelled by user'));
+          console.log(colors.warning('Operation cancelled by user'));
           return;
         }
       }
@@ -445,7 +446,7 @@ class ClassicCLI {
             status: progress.status
           });
         } else {
-          console.log(chalk.cyan(`[${progress.phase}] ${progress.status}`));
+          console.log(colors.primary(`[${progress.phase}] ${progress.status}`));
         }
       });
 
@@ -460,9 +461,9 @@ class ClassicCLI {
       this.displayBatchResults(result);
       
     } catch (error) {
-      console.log(chalk.red('❌ Batch migration failed:'), error.message);
+      console.log(colors.error('❌ Batch migration failed:'), error.message);
       if (options.verbose) {
-        console.log(chalk.gray(error.stack));
+        console.log(colors.tertiary(error.stack));
       }
       process.exit(1);
     }
@@ -504,17 +505,17 @@ class ClassicCLI {
       }
       
       if (errors.length > 0) {
-        console.log(chalk.red('\n⚠️  Missing required parameters:\n'));
+        console.log(colors.error('\n⚠️  Missing required parameters:\n'));
         errors.forEach(error => console.log('  ' + error));
-        console.log(chalk.yellow('\n💡 Tips:'));
-        console.log(chalk.gray('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables for passwords'));
-        console.log(chalk.gray('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
-        console.log(chalk.gray('  • Get the public IP from GCP Console → SQL → Instance → Connectivity'));
+        console.log(colors.warning('\n💡 Tips:'));
+        console.log(colors.tertiary('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables for passwords'));
+        console.log(colors.tertiary('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
+        console.log(colors.tertiary('  • Get the public IP from GCP Console → SQL → Instance → Connectivity'));
         console.log('');
         process.exit(1);
       }
 
-      console.log(chalk.cyan('🔌 Testing CloudSQL connection...'));
+      console.log(colors.primary('🔌 Testing CloudSQL connection...'));
 
       // For now, use the connection manager directly
       const { default: ConnectionManager } = await import(
@@ -539,18 +540,18 @@ class ClassicCLI {
       );
 
       if (result.success) {
-        console.log(chalk.green('✅ Connection successful!'));
-        console.log(chalk.gray(`   Version: ${result.version}`));
-        console.log(chalk.gray(`   Database: ${result.database}`));
-        console.log(chalk.gray(`   User: ${result.user}`));
+        console.log(colors.success('✅ Connection successful!'));
+        console.log(colors.tertiary(`   Version: ${result.version}`));
+        console.log(colors.tertiary(`   Database: ${result.database}`));
+        console.log(colors.tertiary(`   User: ${result.user}`));
       } else {
-        console.log(chalk.red('❌ Connection failed:'), result.error);
+        console.log(colors.error('❌ Connection failed:'), result.error);
         process.exit(1);
       }
     } catch (error) {
-      console.log(chalk.red('❌ Error:'), error.message);
+      console.log(colors.error('❌ Error:'), error.message);
       if (options.verbose) {
-        console.log(chalk.gray(error.stack));
+        console.log(colors.tertiary(error.stack));
       }
       process.exit(1);
     }
@@ -592,17 +593,17 @@ class ClassicCLI {
       }
       
       if (errors.length > 0) {
-        console.log(chalk.red('\n⚠️  Missing required parameters:\n'));
+        console.log(colors.error('\n⚠️  Missing required parameters:\n'));
         errors.forEach(error => console.log('  ' + error));
-        console.log(chalk.yellow('\n💡 Tips:'));
-        console.log(chalk.gray('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables for passwords'));
-        console.log(chalk.gray('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
-        console.log(chalk.gray('  • Get the public IP from GCP Console → SQL → Instance → Connectivity'));
+        console.log(colors.warning('\n💡 Tips:'));
+        console.log(colors.tertiary('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables for passwords'));
+        console.log(colors.tertiary('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
+        console.log(colors.tertiary('  • Get the public IP from GCP Console → SQL → Instance → Connectivity'));
         console.log('');
         process.exit(1);
       }
 
-      console.log(chalk.cyan('📊 Listing databases...'));
+      console.log(colors.primary('📊 Listing databases...'));
 
       const { default: ConnectionManager } = await import(
         '../../infrastructure/cloud/gcp-connection-manager.js'
@@ -625,11 +626,11 @@ class ClassicCLI {
       );
 
       if (databases.length === 0) {
-        console.log(chalk.yellow('ℹ️ No databases found'));
+        console.log(colors.warning('ℹ️ No databases found'));
         return;
       }
 
-      console.log(chalk.green(`📊 Found ${databases.length} databases:`));
+      console.log(colors.success(`📊 Found ${databases.length} databases:`));
       console.log('');
 
       databases.forEach((db, index) => {
@@ -642,11 +643,11 @@ class ClassicCLI {
 
       const totalSize = databases.reduce((sum, db) => sum + db.sizeBytes, 0);
       console.log('');
-      console.log(chalk.yellow('Total:'), this.formatBytes(totalSize));
+      console.log(colors.warning('Total:'), this.formatBytes(totalSize));
     } catch (error) {
-      console.log(chalk.red('❌ Error:'), error.message);
+      console.log(colors.error('❌ Error:'), error.message);
       if (options.verbose) {
-        console.log(chalk.gray(error.stack));
+        console.log(colors.tertiary(error.stack));
       }
       process.exit(1);
     }
@@ -656,7 +657,7 @@ class ClassicCLI {
    * Handle interactive mode
    */
   async handleInteractive(options) {
-    console.log(chalk.cyan('🎨 Launching interactive CLI...'));
+    console.log(colors.primary('🎨 Launching interactive CLI...'));
 
     try {
       const { default: InteractiveCLI } = await import('../tui/index.js');
@@ -672,7 +673,7 @@ class ClassicCLI {
         chalk.red('❌ Failed to launch interactive mode:'),
         error.message
       );
-      console.log(chalk.gray('Falling back to classic CLI mode'));
+      console.log(colors.tertiary('Falling back to classic CLI mode'));
     }
   }
 
@@ -686,7 +687,7 @@ class ClassicCLI {
         const help = this.coordinator.getToolHelp(options.tool);
         this.displayToolHelp(help, options.tool);
       } catch (error) {
-        console.log(chalk.red('❌ Error:'), error.message);
+        console.log(colors.error('❌ Error:'), error.message);
         process.exit(1);
       }
     } else {
@@ -700,11 +701,11 @@ class ClassicCLI {
    * Display configuration summary
    */
   async displayConfigSummary(config) {
-    console.log(chalk.yellow('📋 Configuration Summary:'));
+    console.log(colors.collectiveSecondary('📋 Configuration Summary:'));
     console.log('');
     
     // Source information
-    console.log(chalk.cyan('   Source:'));
+    console.log(colors.primary('   Source:'));
     console.log(chalk.white(`      Project:  ${config.source.project}`));
     console.log(chalk.white(`      Instance: ${config.source.instance}`));
     if (config.source.ip) {
@@ -716,7 +717,7 @@ class ClassicCLI {
     console.log('');
     
     // Target information
-    console.log(chalk.cyan('   Target:'));
+    console.log(colors.primary('   Target:'));
     console.log(chalk.white(`      Project:  ${config.target.project}`));
     console.log(chalk.white(`      Instance: ${config.target.instance}`));
     if (config.target.ip) {
@@ -728,7 +729,7 @@ class ClassicCLI {
     console.log('');
     
     // Migration details
-    console.log(chalk.cyan('   Migration Details:'));
+    console.log(colors.primary('   Migration Details:'));
     console.log(
       chalk.white(
         `      Databases: ${config.options.includeAll ? 'ALL' : config.source.databases?.join(', ') || 'None specified'}`
@@ -760,11 +761,11 @@ class ClassicCLI {
     }
     
     if (config.options.forceCompatibility) {
-      console.log(chalk.yellow(`      ⚠️  Force compatibility: Enabled`));
+      console.log(colors.warning(`      ⚠️  Force compatibility: Enabled`));
     }
     
     if (config.options.dryRun) {
-      console.log(chalk.magenta(`      🔍 DRY RUN: Simulation mode (no changes will be made)`));
+      console.log(colors.collectiveSecondary(`      🔍 DRY RUN: Simulation mode (no changes will be made)`));
     }
 
     console.log('');
@@ -776,7 +777,7 @@ class ClassicCLI {
   async confirmOperation(config) {
     // Check for bypass confirmation flag
     if (config?.options?.bypassConfirmation) {
-      console.log(chalk.yellow('⚡ Bypassing confirmation (--bypass-confirmation flag)'));
+      console.log(colors.warning('⚡ Bypassing confirmation (--bypass-confirmation flag)'));
       return true;
     }
 
@@ -797,10 +798,10 @@ class ClassicCLI {
    */
   displayResults(result, config) {
     if (config.options.dryRun) {
-      console.log(chalk.green('✅ Dry run completed successfully'));
+      console.log(colors.success('✅ Dry run completed successfully'));
       if (result.databasesToMigrate) {
         console.log(
-          chalk.cyan(
+          colors.primary(
             `   Would migrate ${result.databasesToMigrate.length} databases`
           )
         );
@@ -833,13 +834,13 @@ class ClassicCLI {
    */
   displayMigrationSummary(result, config) {
     console.log('');
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
-    console.log(chalk.green('              MIGRATION COMPLETED                  '));
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
+    console.log(colors.success('              MIGRATION COMPLETED                  '));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
     console.log('');
 
     // Basic migration info
-    console.log(chalk.cyan('📊 Migration Summary:'));
+    console.log(colors.primary('📊 Migration Summary:'));
     console.log(chalk.white(`   Source: ${config.source.project}/${config.source.instance}`));
     console.log(chalk.white(`   Target: ${config.target.project}/${config.target.instance}`));
     
@@ -873,12 +874,12 @@ class ClassicCLI {
 
     // Additional result information
     if (result.message) {
-      console.log(chalk.yellow(`   Status: ${result.message}`));
+      console.log(colors.warning(`   Status: ${result.message}`));
     }
 
     console.log('');
-    console.log(chalk.green('✅ Migration completed successfully'));
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
+    console.log(colors.success('✅ Migration completed successfully'));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
     console.log('');
   }
 
@@ -886,12 +887,12 @@ class ClassicCLI {
    * Display available tools
    */
   displayAvailableTools(tools) {
-    console.log(chalk.cyan('🔧 Available Tools:'));
+    console.log(colors.primary('🔧 Available Tools:'));
     console.log('');
 
     tools.forEach((tool) => {
       console.log(chalk.white(`  ${tool.name}`));
-      console.log(chalk.gray(`    ${tool.metadata.description}`));
+      console.log(colors.tertiary(`    ${tool.metadata.description}`));
       console.log(
         chalk.gray(
           `    Category: ${tool.metadata.category} | Provider: ${tool.metadata.provider}`
@@ -909,19 +910,19 @@ class ClassicCLI {
    * Display tool help
    */
   displayToolHelp(help, toolName) {
-    console.log(chalk.cyan(`🔧 Help for ${toolName}:`));
+    console.log(colors.primary(`🔧 Help for ${toolName}:`));
     console.log('');
     console.log(chalk.white(help.description));
     console.log('');
 
     if (help.usage) {
-      console.log(chalk.yellow('Usage:'));
+      console.log(colors.warning('Usage:'));
       console.log(`  ${help.usage}`);
       console.log('');
     }
 
     if (help.options && help.options.length > 0) {
-      console.log(chalk.yellow('Options:'));
+      console.log(colors.warning('Options:'));
       help.options.forEach((option) => {
         console.log(`  ${option}`);
       });
@@ -929,7 +930,7 @@ class ClassicCLI {
     }
 
     if (help.examples && help.examples.length > 0) {
-      console.log(chalk.yellow('Examples:'));
+      console.log(colors.warning('Examples:'));
       help.examples.forEach((example) => {
         console.log(`  ${chalk.gray(example.description)}`);
         console.log(`  ${example.command}`);
@@ -943,7 +944,7 @@ class ClassicCLI {
    */
   showGlobalHelp() {
     console.log('');
-    console.log(chalk.cyan('Platform Engineering DevEx CLI'));
+    console.log(colors.primary('Platform Engineering DevEx CLI'));
     console.log(
       chalk.gray(
         'Simplify complex cloud operations with developer experience in mind'
@@ -993,7 +994,7 @@ class ClassicCLI {
   async displayBatchSummary(mapping) {
     const summary = mapping.getSummary();
     
-    console.log(chalk.yellow('📋 Batch Migration Summary:'));
+    console.log(colors.warning('📋 Batch Migration Summary:'));
     console.log('');
     console.log(chalk.white(`   Strategy: ${summary.strategy}`));
     console.log(chalk.white(`   Mapping Type: ${summary.mappingType}`));
@@ -1004,16 +1005,16 @@ class ClassicCLI {
     console.log('');
     
     if (summary.tasks.length <= 10) {
-      console.log(chalk.cyan('Migration Tasks:'));
+      console.log(colors.primary('Migration Tasks:'));
       summary.tasks.forEach((task, index) => {
-        console.log(chalk.gray(`  ${index + 1}. ${task.from} → ${task.to}`));
+        console.log(colors.tertiary(`  ${index + 1}. ${task.from} → ${task.to}`));
       });
     } else {
-      console.log(chalk.cyan(`Showing first 5 of ${summary.tasks.length} migration tasks:`));
+      console.log(colors.primary(`Showing first 5 of ${summary.tasks.length} migration tasks:`));
       summary.tasks.slice(0, 5).forEach((task, index) => {
-        console.log(chalk.gray(`  ${index + 1}. ${task.from} → ${task.to}`));
+        console.log(colors.tertiary(`  ${index + 1}. ${task.from} → ${task.to}`));
       });
-      console.log(chalk.gray(`  ... and ${summary.tasks.length - 5} more`));
+      console.log(colors.tertiary(`  ... and ${summary.tasks.length - 5} more`));
     }
     console.log('');
   }
@@ -1026,7 +1027,7 @@ class ClassicCLI {
     
     // Check for bypass confirmation flag
     if (options?.bypassConfirmation) {
-      console.log(chalk.yellow('⚡ Bypassing confirmation (--bypass-confirmation flag)'));
+      console.log(colors.warning('⚡ Bypassing confirmation (--bypass-confirmation flag)'));
       return true;
     }
 
@@ -1056,24 +1057,24 @@ class ClassicCLI {
    */
   displayBatchResults(result) {
     console.log('');
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
-    console.log(chalk.green('                BATCH MIGRATION RESULTS            '));
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
+    console.log(colors.success('                BATCH MIGRATION RESULTS            '));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
     console.log('');
 
     // Summary
-    console.log(chalk.cyan('📊 Summary:'));
+    console.log(colors.primary('📊 Summary:'));
     console.log(chalk.white(`   Strategy: ${result.summary.strategy}`));
     console.log(chalk.white(`   Mapping Type: ${result.summary.mappingType}`));
     console.log(chalk.white(`   Total Tasks: ${result.summary.totalTasks}`));
-    console.log(chalk.green(`   ✅ Successful: ${result.summary.successful}`));
+    console.log(colors.success(`   ✅ Successful: ${result.summary.successful}`));
     
     if (result.summary.failed > 0) {
-      console.log(chalk.red(`   ❌ Failed: ${result.summary.failed}`));
+      console.log(colors.error(`   ❌ Failed: ${result.summary.failed}`));
     }
     
     if (result.summary.skipped > 0) {
-      console.log(chalk.yellow(`   ⏭️ Skipped: ${result.summary.skipped}`));
+      console.log(colors.warning(`   ⏭️ Skipped: ${result.summary.skipped}`));
     }
     
     console.log(chalk.white(`   Success Rate: ${result.summary.successRate}`));
@@ -1082,7 +1083,7 @@ class ClassicCLI {
 
     // Performance metrics
     if (result.performance) {
-      console.log(chalk.cyan('⚡ Performance:'));
+      console.log(colors.primary('⚡ Performance:'));
       console.log(chalk.white(`   Average Duration: ${this._formatDuration(result.performance.avgDuration)}`));
       console.log(chalk.white(`   Min Duration: ${this._formatDuration(result.performance.minDuration)}`));
       console.log(chalk.white(`   Max Duration: ${this._formatDuration(result.performance.maxDuration)}`));
@@ -1091,36 +1092,36 @@ class ClassicCLI {
 
     // Successful migrations
     if (result.successful.length > 0) {
-      console.log(chalk.green('✅ Successful Migrations:'));
+      console.log(colors.success('✅ Successful Migrations:'));
       result.successful.forEach((migration, index) => {
-        console.log(chalk.green(`   ${index + 1}. ${migration.source} → ${migration.target}`));
-        console.log(chalk.gray(`      Databases: ${migration.databases.join(', ') || 'all'}`));
-        console.log(chalk.gray(`      Duration: ${migration.durationFormatted}`));
+        console.log(colors.success(`   ${index + 1}. ${migration.source} → ${migration.target}`));
+        console.log(colors.tertiary(`      Databases: ${migration.databases.join(', ') || 'all'}`));
+        console.log(colors.tertiary(`      Duration: ${migration.durationFormatted}`));
       });
       console.log('');
     }
 
     // Failed migrations
     if (result.failed.length > 0) {
-      console.log(chalk.red('❌ Failed Migrations:'));
+      console.log(colors.error('❌ Failed Migrations:'));
       result.failed.forEach((migration, index) => {
-        console.log(chalk.red(`   ${index + 1}. ${migration.source} → ${migration.target}`));
-        console.log(chalk.red(`      Error: ${migration.error}`));
+        console.log(colors.error(`   ${index + 1}. ${migration.source} → ${migration.target}`));
+        console.log(colors.error(`      Error: ${migration.error}`));
       });
       console.log('');
     }
 
     // Skipped migrations
     if (result.skipped.length > 0) {
-      console.log(chalk.yellow('⏭️ Skipped Migrations:'));
+      console.log(colors.warning('⏭️ Skipped Migrations:'));
       result.skipped.forEach((migration, index) => {
-        console.log(chalk.yellow(`   ${index + 1}. ${migration.source} → ${migration.target}`));
-        console.log(chalk.gray(`      Reason: ${migration.reason}`));
+        console.log(colors.warning(`   ${index + 1}. ${migration.source} → ${migration.target}`));
+        console.log(colors.tertiary(`      Reason: ${migration.reason}`));
       });
       console.log('');
     }
 
-    console.log(chalk.green('═══════════════════════════════════════════════════'));
+    console.log(colors.success('═══════════════════════════════════════════════════'));
   }
 
   /**

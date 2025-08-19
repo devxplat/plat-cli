@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { Select, StatusMessage } from '@inkjs/ui';
+import { StatusMessage } from '@inkjs/ui';
+import { colorPalettes } from '../theme/custom-theme.js';
+import SimpleSelect from './SimpleSelect.js';
 
 /**
  * Main menu component using Ink UI Select for single-line interface
@@ -59,18 +61,18 @@ const MainMenu = ({ coordinator, onToolSelected, onExit }) => {
     { flexDirection: 'column', gap: 1 },
     React.createElement(
       Text,
-      { color: 'cyan' },
+      { color: colorPalettes.dust.primary },
       '🚀 Platform DevEx CLI - Select tool:'
     ),
-    React.createElement(Select, {
+    React.createElement(SimpleSelect, {
       options: options,
-      onChange: handleSelection,
-      visibleOptionCount: 6
+      onSubmit: handleSelection,
+      defaultValue: null
     }),
     React.createElement(
       Text,
-      { color: 'gray', dimColor: true },
-      'Use arrow keys to navigate • Enter: select • Alt+Q: quit'
+      { color: '#ac8500' },
+      'Q or Ctrl+X: quit'
     )
   );
 };

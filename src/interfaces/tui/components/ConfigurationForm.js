@@ -4,26 +4,14 @@ import {
   TextInput,
   ConfirmInput,
   StatusMessage,
-  ThemeProvider,
-  extendTheme,
-  defaultTheme
+  ThemeProvider
 } from '@inkjs/ui';
+import customTheme, { colorPalettes } from '../theme/custom-theme.js';
 import OperationConfig from '../../../domain/models/operation-config.js';
 import InstanceSelector from './InstanceSelector.js';
 import SimpleSelect from './SimpleSelect.js';
 
-// Simplified theme that works with @inkjs/ui Select
-const selectTheme = extendTheme(defaultTheme, {
-  components: {
-    Select: {
-      styles: {
-        container: () => ({
-          flexDirection: 'column'
-        })
-      }
-    }
-  }
-});
+// Use custom theme for consistent styling
 
 /**
  * Fixed configuration form with proper batch flow
@@ -139,20 +127,13 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         },
         {
           key: 'dryRun',
-          type: 'confirm',
-          label: 'Run in dry-run mode (simulation only)?',
+          type: 'select',
+          label: 'Migration Execution Mode',
+          options: [
+            { label: '🚀 Execute real migration', value: false },
+            { label: '🎭 Run simulation only (dry-run)', value: true }
+          ],
           defaultValue: false
-        },
-        {
-          key: 'retryAttempts',
-          type: 'text',
-          label: 'Number of retry attempts (1-10)',
-          placeholder: '3',
-          defaultValue: '3',
-          validate: (value) => {
-            const num = parseInt(value);
-            return (num > 0 && num <= 10) || 'Enter a number between 1 and 10';
-          }
         }
       ];
     }
@@ -256,7 +237,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           schemaOnly: formData.dataMode === 'schema',
           dataOnly: formData.dataMode === 'data',
           dryRun: formData.dryRun || false,
-          retryAttempts: parseInt(formData.retryAttempts) || 3,
+          retryAttempts: 3,
           verbose: false
         }
       });
@@ -296,7 +277,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         schemaOnly: formData.dataMode === 'schema',
         dataOnly: formData.dataMode === 'data',
         dryRun: formData.dryRun || false,
-        retryAttempts: parseInt(formData.retryAttempts) || 3,
+        retryAttempts: 3,
         verbose: false
       },
       metadata: {
@@ -328,7 +309,11 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           options: currentStep.options,
           defaultValue: savedValue || currentStep.defaultValue,
           onSubmit: (value) => {
-            handleInputChange(currentStep.key, value);
+            // Convert string 'true'/'false' to boolean for dryRun
+            const finalValue = currentStep.key === 'dryRun' 
+              ? value === true || value === 'true'
+              : value;
+            handleInputChange(currentStep.key, finalValue);
             handleNext();
           }
         });
@@ -398,21 +383,21 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
 
   return React.createElement(
     ThemeProvider,
-    { theme: selectTheme },
+    { theme: customTheme },
     React.createElement(
       Box,
       { flexDirection: 'column', gap: 1 },
       React.createElement(
         Text,
-        { color: 'cyan' },
+        { color: colorPalettes.dust.primary },
         `🔧 ${currentStep.label} (${stepNumber}/${totalSteps}):`
       ),
       error && React.createElement(StatusMessage, { variant: 'error' }, error),
       renderCurrentStep(),
       React.createElement(
         Text,
-        { color: 'gray', dimColor: true },
-        `${currentStepIndex > 0 ? 'Esc: back' : 'Esc: cancel'} • Enter: continue • Alt+Q: quit`
+        { color: '#ac8500' },
+        `${currentStepIndex > 0 ? 'Esc: back' : 'Esc: cancel'} • Enter: continue • Ctrl+X: quit`
       )
     )
   );

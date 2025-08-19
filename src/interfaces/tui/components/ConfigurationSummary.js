@@ -1,6 +1,8 @@
 import React, { useState, useEffect, memo } from 'react';
 import { Box, Text } from 'ink';
-import { Select, OrderedList } from '@inkjs/ui';
+import { Alert, UnorderedList } from '@inkjs/ui';
+import { colorPalettes } from '../theme/custom-theme.js';
+import SimpleSelect from './SimpleSelect.js';
 
 /**
  * Configuration summary and confirmation component
@@ -52,20 +54,30 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const getConfirmationMessage = () => {
-    // Check if batch migration
-    if (config?.isBatch && config?.mapping) {
+  const renderMigrationAlert = () => {
+    const isDryRun = config?.isBatch ? config.mapping?.options?.dryRun : config?.options?.dryRun;
+    const isBatch = config?.isBatch && config?.mapping;
+    
+    let message;
+    if (isBatch) {
       const summary = config.mapping.getSummary();
-      if (config.mapping.options?.dryRun) {
-        return `🎭 Execute dry run simulation for ${summary.totalMigrations} migrations?`;
-      }
-      return `⚠️ This will execute ${summary.totalMigrations} migrations. Continue?`;
+      message = isDryRun 
+        ? `🎭 DRY RUN: Simulate ${summary.totalMigrations} migrations`
+        : `⚠️ LIVE: Execute ${summary.totalMigrations} migrations`;
+    } else {
+      message = isDryRun
+        ? '🎭 DRY RUN: Simulation only, no data will be migrated'
+        : '⚠️ LIVE MIGRATION: Data will be transferred between instances';
     }
     
-    if (config.options?.dryRun) {
-      return '🎭 Execute dry run simulation?';
-    }
-    return '⚠️ This will migrate data between CloudSQL instances. Continue?';
+    return React.createElement(
+      Box,
+      { marginTop: 1, marginBottom: 1 },
+      React.createElement(Alert, {
+        variant: isDryRun ? 'info' : 'error',
+        title: message
+      })
+    );
   };
 
   // Check if batch configuration
@@ -77,108 +89,60 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
       { flexDirection: 'column', gap: 1 },
       React.createElement(
         Text,
-        { color: 'yellow', bold: true },
+        { color: colorPalettes.dust.primary, bold: true },
         '📋 Batch Migration Summary'
       ),
       React.createElement(
-        OrderedList,
-        null,
+        UnorderedList,
+        { marginTop: 1 },
         React.createElement(
-          OrderedList.Item,
+          UnorderedList.Item,
           null,
-          React.createElement(Text, { color: 'gray' }, 'Strategy: '),
           React.createElement(
             Text,
-            { color: 'cyan', bold: true },
-            summary.strategy
-          )
-        ),
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Mapping Type: '),
-          React.createElement(
-            Text,
-            { color: 'cyan', bold: true },
-            summary.mappingType
-          )
-        ),
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Total Sources: '),
-          React.createElement(
-            Text,
-            { color: 'white', bold: true },
-            summary.totalSources
-          )
-        ),
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Total Targets: '),
-          React.createElement(
-            Text,
-            { color: 'white', bold: true },
-            summary.totalTargets
-          )
-        ),
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Total Migrations: '),
-          React.createElement(
-            Text,
-            { color: 'green', bold: true },
-            summary.totalMigrations
-          )
-        ),
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Conflict Resolution: '),
-          React.createElement(
-            Text,
-            { color: 'white', bold: true },
-            summary.conflictResolution
-          )
-        ),
-        config.mapping.options?.dryRun &&
-          React.createElement(
-            OrderedList.Item,
             null,
-            React.createElement(
-              Text,
-              { color: 'magenta', bold: true },
-              '⚠️ DRY RUN MODE - Simulation only'
-            )
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Strategy: '),
+            React.createElement(Text, { color: colorPalettes.dust.primary, bold: true }, summary.strategy),
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, ' | Type: '),
+            React.createElement(Text, { color: colorPalettes.dust.primary, bold: true }, summary.mappingType)
           )
-      ),
-      React.createElement(
-        Box,
-        {
-          marginTop: 1,
-          paddingX: 2,
-          paddingY: 1,
-          borderStyle: 'round',
-          borderColor: 'red'
-        },
+        ),
         React.createElement(
-          Text,
-          { color: 'red', bold: true },
-          getConfirmationMessage()
+          UnorderedList.Item,
+          null,
+          React.createElement(
+            Text,
+            null,
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Sources: '),
+            React.createElement(Text, { color: 'white', bold: true }, summary.totalSources),
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, ' → Targets: '),
+            React.createElement(Text, { color: 'white', bold: true }, summary.totalTargets),
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, ' = '),
+            React.createElement(Text, { color: 'green', bold: true }, `${summary.totalMigrations} migrations`)
+          )
+        ),
+        React.createElement(
+          UnorderedList.Item,
+          null,
+          React.createElement(
+            Text,
+            null,
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Conflicts: '),
+            React.createElement(Text, { color: 'white', bold: true }, summary.conflictResolution)
+          )
         )
       ),
+      renderMigrationAlert(),
       React.createElement(
         Box,
         { marginTop: 1 },
-        React.createElement(Select, {
+        React.createElement(SimpleSelect, {
           options: [
             { label: '✅ Yes, proceed with migration', value: 'confirm' },
             { label: '❌ No, cancel operation', value: 'cancel' }
           ],
           defaultValue: 'cancel', // Default to cancel for safety
-          onChange: (value) => {
+          onSubmit: (value) => {
             if (value === 'confirm') {
               onConfirm();
             } else {
@@ -189,8 +153,8 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
       ),
       React.createElement(
         Text,
-        { color: 'gray', dimColor: true, marginTop: 1 },
-        '↑↓: navigate • Enter: select • Esc: back • Alt+Q: quit'
+        { color: '#ac8500', marginTop: 1 },
+        '↑↓: navigate • Enter: select • Esc: back • Ctrl+X: quit'
       )
     );
   }
@@ -201,105 +165,76 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     { flexDirection: 'column', gap: 1 },
     React.createElement(
       Text,
-      { color: 'yellow', bold: true },
-      '📋 Configuration Summary'
+      { color: colorPalettes.dust.primary, bold: true },
+      '📋 Migration Summary'
     ),
     React.createElement(
-      OrderedList,
-      null,
+      UnorderedList,
+      { marginTop: 1 },
       React.createElement(
-        OrderedList.Item,
+        UnorderedList.Item,
         null,
-        React.createElement(Text, { color: 'gray' }, 'Source: '),
         React.createElement(
           Text,
-          { color: 'cyan', bold: true },
-          `${config.source.project}:${config.source.instance}`
-        )
-      ),
-      React.createElement(
-        OrderedList.Item,
-        null,
-        React.createElement(Text, { color: 'gray' }, 'Target: '),
-        React.createElement(
-          Text,
-          { color: 'cyan', bold: true },
-          `${config.target.project}:${config.target.instance}`
-        )
-      ),
-      React.createElement(
-        OrderedList.Item,
-        null,
-        React.createElement(Text, { color: 'gray' }, 'Databases: '),
-        React.createElement(
-          Text,
-          { color: 'white', bold: true },
-          config.options.includeAll
-            ? 'ALL'
-            : config.source.databases?.join(', ') || 'None'
-        )
-      ),
-      React.createElement(
-        OrderedList.Item,
-        null,
-        React.createElement(Text, { color: 'gray' }, 'Mode: '),
-        React.createElement(
-          Text,
-          { color: 'white', bold: true },
-          config.options.schemaOnly
-            ? 'Schema only'
-            : config.options.dataOnly
-              ? 'Data only'
-              : 'Full migration'
-        )
-      ),
-      config.options.dryRun &&
-        React.createElement(
-          OrderedList.Item,
           null,
-          React.createElement(
-            Text,
-            { color: 'magenta', bold: true },
-            '⚠️ DRY RUN MODE - Simulation only'
-          )
-        ),
-      estimate &&
-        React.createElement(
-          OrderedList.Item,
-          null,
-          React.createElement(Text, { color: 'gray' }, 'Estimate: '),
-          React.createElement(
-            Text,
-            { color: 'green', bold: true },
-            `${formatBytes(estimate.totalSizeBytes)} (~${Math.round(estimate.estimatedDurationMinutes)} min)`
+          React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'From: '),
+          React.createElement(Text, { color: colorPalettes.dust.primary, bold: true }, 
+            `${config.source.project}:${config.source.instance}`
           )
         )
-    ),
-    React.createElement(
-      Box,
-      {
-        marginTop: 1,
-        paddingX: 2,
-        paddingY: 1,
-        borderStyle: 'round',
-        borderColor: 'red'
-      },
+      ),
       React.createElement(
-        Text,
-        { color: 'red', bold: true },
-        getConfirmationMessage()
+        UnorderedList.Item,
+        null,
+        React.createElement(
+          Text,
+          null,
+          React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'To: '),
+          React.createElement(Text, { color: colorPalettes.dust.primary, bold: true }, 
+            `${config.target.project}:${config.target.instance}`
+          )
+        )
+      ),
+      React.createElement(
+        UnorderedList.Item,
+        null,
+        React.createElement(
+          Text,
+          null,
+          React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'DBs: '),
+          React.createElement(Text, { color: 'white', bold: true }, 
+            config.options.includeAll
+              ? 'ALL'
+              : config.source.databases?.join(', ') || 'None'
+          ),
+          React.createElement(Text, { color: colorPalettes.dust.tertiary }, ' | Mode: '),
+          React.createElement(Text, { color: 'white', bold: true },
+            config.options.schemaOnly
+              ? 'Schema'
+              : config.options.dataOnly
+                ? 'Data'
+                : 'Full'
+          ),
+          estimate && React.createElement(React.Fragment, null,
+            React.createElement(Text, { color: colorPalettes.dust.tertiary }, ' | Size: '),
+            React.createElement(Text, { color: 'green', bold: true },
+              `${formatBytes(estimate.totalSizeBytes)} (~${Math.round(estimate.estimatedDurationMinutes)}min)`
+            )
+          )
+        )
       )
     ),
+    renderMigrationAlert(),
     React.createElement(
       Box,
       { marginTop: 1 },
-      React.createElement(Select, {
+      React.createElement(SimpleSelect, {
         options: [
           { label: '✅ Yes, proceed with migration', value: 'confirm' },
           { label: '❌ No, cancel operation', value: 'cancel' }
         ],
         defaultValue: 'cancel', // Default to cancel for safety
-        onChange: (value) => {
+        onSubmit: (value) => {
           if (value === 'confirm') {
             onConfirm();
           } else {
@@ -310,8 +245,8 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     ),
     React.createElement(
       Text,
-      { color: 'gray', dimColor: true, marginTop: 1 },
-      '↑↓: navigate • Enter: select • Esc: back • Alt+Q: quit'
+      { color: '#ac8500', marginTop: 1 },
+      '↑↓: navigate • Enter: select • Esc: back • Ctrl+X: quit'
     )
   );
 };

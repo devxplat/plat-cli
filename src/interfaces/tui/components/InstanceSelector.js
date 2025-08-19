@@ -7,6 +7,7 @@ import {
   ConfirmInput,
   StatusMessage
 } from '@inkjs/ui';
+import { colorPalettes } from '../theme/custom-theme.js';
 
 /**
  * Instance Selector Component
@@ -114,7 +115,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
       { flexDirection: 'column', gap: 1 },
       React.createElement(
         Text,
-        { color: 'cyan' },
+        { color: colorPalettes.dust.primary },
         '🔧 How would you like to select instances?'
       ),
       React.createElement(Select, {
@@ -140,7 +141,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
         { flexDirection: 'column', gap: 1 },
         React.createElement(
           Text,
-          { color: 'cyan' },
+          { color: colorPalettes.dust.primary },
           '📁 Enter path to instances file:'
         ),
         React.createElement(TextInput, {
@@ -160,7 +161,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
         ),
         React.createElement(
           Text,
-          { color: 'gray', dimColor: true },
+          { color: colorPalettes.dust.tertiary },
           'Supported formats: .txt, .json, .csv'
         )
       );
@@ -172,7 +173,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
         { flexDirection: 'column', gap: 1 },
         React.createElement(
           Text,
-          { color: 'cyan' },
+          { color: colorPalettes.dust.primary },
           '✏️ Enter instances (one per line, format: project:instance or instance):'
         ),
         React.createElement(
@@ -203,7 +204,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
         ),
         React.createElement(
           Text,
-          { color: 'gray', dimColor: true },
+          { color: '#ac8500' },
           'Press Enter when done, Esc to go back'
         )
       );
@@ -233,7 +234,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
       { flexDirection: 'column', gap: 1 },
       React.createElement(
         Text,
-        { color: 'cyan' },
+        { color: colorPalettes.dust.primary },
         `📋 Found ${instances.length} instances. Select instances to migrate:`
       ),
       instances.length <= 20 ? (
@@ -271,7 +272,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
             ),
             React.createElement(
               Text,
-              { color: 'gray', dimColor: true },
+              { color: colorPalettes.dust.tertiary },
               `  ... and ${instances.length - 5} more`
             )
           ),
@@ -299,7 +300,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
       ),
       React.createElement(
         Text,
-        { color: 'gray', dimColor: true },
+        { color: '#ac8500' },
         instances.length <= 20 
           ? 'Use Space to select/deselect, Enter to confirm, Esc to go back'
           : 'Esc to go back'
