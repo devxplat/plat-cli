@@ -11,7 +11,9 @@
     "epicvinny <visuzano@hotmail.com> ()"
   ],
   "dependencies": {
+    "@folder/xdg": "^4.0.1",
     "@google-cloud/sql": "^0.21.0",
+    "better-sqlite3": "^12.2.0",
     "@googleapis/sqladmin": "^31.1.0",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^7.8.3",

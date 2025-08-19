@@ -30,6 +30,24 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
     return `${mins}m ${secs}s`;
   };
 
+  const formatDuration = (milliseconds) => {
+    if (typeof milliseconds === 'string') {
+      return milliseconds; // Already formatted
+    }
+    
+    const seconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
   // Show error state
   if (error) {
     return React.createElement(
@@ -54,7 +72,11 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
       summary && React.createElement(
         Box,
         { flexDirection: 'column', marginLeft: 2 },
-        summary.processedDatabases && React.createElement(
+        (summary.databaseDetails && summary.databaseDetails.length > 0) ? React.createElement(
+          Text,
+          null,
+          `Database${summary.databaseDetails.length === 1 ? '' : 's'} migrated: ${summary.databaseDetails.map(db => db.name).join(', ')}`
+        ) : summary.processedDatabases && React.createElement(
           Text,
           null,
           `Databases migrated: ${summary.processedDatabases}`
@@ -67,7 +89,7 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
         summary.duration && React.createElement(
           Text,
           null,
-          `Duration: ${summary.duration}`
+          `Duration: ${formatDuration(summary.duration)}`
         )
       )
     );

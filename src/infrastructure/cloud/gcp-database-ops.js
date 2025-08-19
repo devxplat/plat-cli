@@ -158,21 +158,8 @@ class DatabaseOperations {
         options.connectionInfo || {} // Pass connection info (ip, user, password)
       );
 
-      // Build pg_restore command
-      const pgRestoreArgs = [
-        '--host',
-        config.host,
-        '--port',
-        config.port.toString(),
-        '--username',
-        config.user,
-        '--dbname',
-        database,
-        '--verbose',
-        '--no-password',
-        '--clean',
-        '--if-exists'
-      ];
+      // Build pg_restore command with version-specific flags
+      const pgRestoreArgs = await this._buildPgRestoreArgs(config, database, options);
 
       // Add additional options
       if (options.dataOnly) {
@@ -582,12 +569,18 @@ class DatabaseOperations {
         const output = data.toString();
         stderr += output;
 
+        // Filter known non-critical warnings for pg_restore
+        const isWarningToIgnore = this._shouldIgnoreWarning(output, command);
+        
         // pg_dump and pg_restore send progress info to stderr
         if (
           output.includes('processing') ||
           output.includes('dumping') ||
           output.includes('creating')
         ) {
+          this.logger.debug(output.trim());
+        } else if (!isWarningToIgnore && output.trim()) {
+          // Only log non-ignored warnings/errors
           this.logger.debug(output.trim());
         }
       });
@@ -599,9 +592,18 @@ class DatabaseOperations {
         if (code === 0) {
           resolve({ stdout, stderr, stats });
         } else {
-          reject(
-            new Error(`Comando ${command} falhou com código ${code}: ${stderr}`)
-          );
+          // For pg_restore, check if errors are only ignorable warnings
+          if (command === 'pg_restore' && this._areOnlyIgnorableErrors(stderr)) {
+            this.logger.warn(`pg_restore terminou com warnings não-críticos (código ${code})`);
+            resolve({ stdout, stderr, stats });
+          } else if (command === 'pg_restore' && this._isTransactionTimeoutOnlyError(stderr)) {
+            this.logger.warn(`pg_restore falhou apenas devido ao transaction_timeout - continuando (código ${code})`);
+            resolve({ stdout, stderr, stats });
+          } else {
+            reject(
+              new Error(`Comando ${command} falhou com código ${code}: ${stderr}`)
+            );
+          }
         }
       });
 
@@ -630,6 +632,133 @@ class DatabaseOperations {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  /**
+   * Check if a warning/error should be ignored for pg_restore
+   */
+  _shouldIgnoreWarning(output, command) {
+    if (command !== 'pg_restore') {
+      return false;
+    }
+
+    const ignorablePatterns = [
+      // Known non-critical warnings for pg_restore
+      /no privileges were granted/i,
+      /pg_replication_origin/i,
+      /unrecognized configuration parameter "transaction_timeout"/i,
+      /role ".*" does not exist/i,
+      // ACL warnings are expected when using --no-acl
+      /creating ACL/i,
+      /WARNING:.*privileges/i
+    ];
+
+    return ignorablePatterns.some(pattern => pattern.test(output));
+  }
+
+  /**
+   * Check if stderr contains only ignorable errors/warnings
+   */
+  _areOnlyIgnorableErrors(stderr) {
+    if (!stderr || !stderr.trim()) {
+      return true;
+    }
+
+    const lines = stderr.split('\n').filter(line => line.trim());
+    
+    // Check if all error lines are ignorable
+    return lines.every(line => {
+      // Skip progress lines and empty lines
+      if (
+        line.includes('processing') ||
+        line.includes('dumping') ||
+        line.includes('creating') ||
+        !line.trim()
+      ) {
+        return true;
+      }
+
+      // Check if this line matches an ignorable pattern
+      return this._shouldIgnoreWarning(line, 'pg_restore');
+    });
+  }
+
+  /**
+   * Check if the only error is transaction_timeout during initialization
+   */
+  _isTransactionTimeoutOnlyError(stderr) {
+    if (!stderr || !stderr.trim()) {
+      return false;
+    }
+
+    // Check if stderr contains the specific transaction_timeout error pattern
+    const hasTransactionTimeoutError = stderr.includes('unrecognized configuration parameter "transaction_timeout"');
+    const hasInitializingError = stderr.includes('while INITIALIZING');
+    
+    if (!hasTransactionTimeoutError || !hasInitializingError) {
+      return false;
+    }
+
+    // Split into lines and filter out known patterns
+    const lines = stderr.split('\n').filter(line => line.trim());
+    
+    // Check if all lines are either transaction_timeout related or other ignorable patterns
+    return lines.every(line => {
+      // Skip empty lines and progress messages
+      if (!line.trim() || 
+          line.includes('connecting to database') ||
+          line.includes('while INITIALIZING') ||
+          line.includes('SET transaction_timeout') ||
+          line.includes('processing') ||
+          line.includes('dumping') ||
+          line.includes('creating') ||
+          line.includes('dropping') ||
+          line.includes('executing') ||
+          line.includes('warning: errors ignored')) {
+        return true;
+      }
+
+      // Check transaction_timeout specific error
+      if (line.includes('unrecognized configuration parameter "transaction_timeout"') ||
+          line.includes('ERROR:  unrecognized configuration parameter')) {
+        return true;
+      }
+
+      // Check if this line matches other ignorable patterns
+      return this._shouldIgnoreWarning(line, 'pg_restore');
+    });
+  }
+
+  /**
+   * Build pg_restore arguments with intelligent flag selection
+   */
+  async _buildPgRestoreArgs(config, database, options = {}) {
+    const baseArgs = [
+      '--host',
+      config.host,
+      '--port',
+      config.port.toString(),
+      '--username',
+      config.user,
+      '--dbname',
+      database,
+      '--verbose',
+      '--no-password',
+      '--if-exists',
+      '--no-acl',
+      '--no-owner',
+      '--no-tablespaces',
+      '--no-privileges',
+      '--no-comments'
+    ];
+
+    // Add --clean only if not explicitly disabled
+    // This helps with the transaction_timeout issue by doing a cleaner restore
+    if (options.useClean !== false) {
+      baseArgs.splice(-1, 0, '--clean'); // Insert before --no-comments
+    }
+
+    return baseArgs;
   }
 }
 

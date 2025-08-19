@@ -37,20 +37,24 @@ const ProjectScanner = ({
   useEffect(() => {
     let mounted = true;
 
-    const loadSuggestions = async () => {
+    const loadSuggestions = async (forceRefresh = false) => {
       try {
-        // Get recent projects from history
-        const recentProjects = projectHistory.getRecentProjects();
+        // Ensure loading state is visible for minimum time (better UX)
+        const startTime = Date.now();
+        const minLoadingTime = 800; // 800ms minimum loading time
 
-        // Set up progress callback for dynamic updates
+        // Set up progress callback for dynamic updates BEFORE any async operations
         gcpProjectFetcher.setProgressCallback((message) => {
           if (mounted) {
             setLoadingMessage(message || 'Loading available GCP projects...');
           }
         });
 
-        // Get all accessible projects from GCP with dynamic progress
-        const gcpProjects = await gcpProjectFetcher.fetchProjects();
+        // Start both operations in parallel
+        const [recentProjects, gcpProjects] = await Promise.all([
+          projectHistory.getRecentProjects(),
+          gcpProjectFetcher.fetchProjects(forceRefresh)
+        ]);
 
         // Combine and deduplicate suggestions
         const allSuggestions = [
@@ -63,11 +67,28 @@ const ProjectScanner = ({
           ...gcpProjects.filter((p) => !recentProjects.includes(p)).sort()
         ];
 
+        // Calculate remaining loading time to ensure minimum spinner visibility
+        const elapsedTime = Date.now() - startTime;
+        const remainingTime = Math.max(0, minLoadingTime - elapsedTime);
+
+        // Show final status message
+        const cacheInfo = await gcpProjectFetcher.getCacheInfo();
+        if (cacheInfo.hasCache && !forceRefresh) {
+          const cacheAgeMinutes = Math.round(cacheInfo.cacheAge / 1000 / 60);
+          setLoadingMessage(`Found ${sortedSuggestions.length} projects (cache: ${cacheAgeMinutes}m old)`);
+        } else {
+          setLoadingMessage(`Found ${sortedSuggestions.length} projects (fresh data)`);
+        }
+
+        // Wait for minimum loading time before transitioning
+        if (remainingTime > 0) {
+          await new Promise(resolve => setTimeout(resolve, remainingTime));
+        }
+
         if (mounted) {
           setSuggestions(sortedSuggestions);
           setProjectCount(sortedSuggestions.length);
-          setLoadingMessage(`Found ${sortedSuggestions.length} projects`);
-          // Transition to input state after loading
+          // Transition to input state after ensuring minimum loading time
           setCurrentStep('input');
         }
       } catch (err) {
@@ -102,7 +123,67 @@ const ProjectScanner = ({
         onCancel?.();
       }
     }
+
+    // Add cache refresh functionality with F5 or Ctrl+R
+    if ((key.function && key.name === 'f5') || (key.ctrl && input === 'r')) {
+      if (currentStep === 'input') {
+        refreshCache();
+      }
+    }
   });
+
+  // Function to refresh cache
+  const refreshCache = async () => {
+    setCurrentStep('loading');
+    setLoadingMessage('Refreshing project cache...');
+    
+    try {
+      const startTime = Date.now();
+      const minLoadingTime = 1000; // 1 second minimum for refresh (user-initiated)
+
+      // Set up progress callback for dynamic updates
+      gcpProjectFetcher.setProgressCallback((message) => {
+        setLoadingMessage(message || 'Refreshing project cache...');
+      });
+
+      // Force refresh of projects cache and get recent projects in parallel
+      const [recentProjects, gcpProjects] = await Promise.all([
+        projectHistory.getRecentProjects(),
+        gcpProjectFetcher.fetchProjects(true)
+      ]);
+
+      // Combine and deduplicate suggestions
+      const allSuggestions = [
+        ...new Set([...recentProjects, ...gcpProjects])
+      ];
+
+      // Sort: recent projects first (maintain their order), then GCP projects alphabetically
+      const sortedSuggestions = [
+        ...recentProjects,
+        ...gcpProjects.filter((p) => !recentProjects.includes(p)).sort()
+      ];
+
+      // Show completion message
+      setLoadingMessage(`Found ${sortedSuggestions.length} projects (refreshed)`);
+
+      // Ensure minimum loading time for user feedback
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, minLoadingTime - elapsedTime);
+      
+      if (remainingTime > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingTime));
+      }
+
+      setSuggestions(sortedSuggestions);
+      setProjectCount(sortedSuggestions.length);
+      setCurrentStep('input');
+    } catch (err) {
+      setError('Failed to refresh cache. Using existing data.');
+      setCurrentStep('input');
+    } finally {
+      gcpProjectFetcher.setProgressCallback(null);
+    }
+  };
 
   // Scan CloudSQL instances in the project
   const scanProject = async (project) => {
@@ -284,8 +365,8 @@ const ProjectScanner = ({
       setInstances(scannedInstances);
       setCurrentStep('selection');
 
-      // Add successful project to history for future autocomplete
-      projectHistory.addProject(projectId);
+      // Add successful project to history for future autocomplete (now async)
+      await projectHistory.addProject(projectId);
     } catch (err) {
       setError(err.message);
       setCurrentStep('input');
@@ -345,7 +426,7 @@ const ProjectScanner = ({
             React.createElement(
               Text,
               { color: colorPalettes.dust.tertiary, dimColor: true },
-              `💡 Start typing to see suggestions • Enter to accept`
+              `💡 Start typing to see suggestions • Enter to accept • F5 to refresh cache`
             )
         );
 

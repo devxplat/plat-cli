@@ -1,19 +1,16 @@
 /**
  * GCP Project Fetcher
  * Fetches available GCP projects for autocomplete functionality
+ * Now uses persistent caching via Turso Database
  */
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import persistentCache from '../cache/persistent-cache.js';
 
 const execAsync = promisify(exec);
 
 class GCPProjectFetcher {
   constructor() {
-    this.cache = null;
-    this.cacheExpiry = null;
-    this.cacheDuration = 60 * 60 * 1000; // 60 minutes (longer cache for 20k projects)
-    this.billingCache = null;
-    this.billingCacheExpiry = null;
     this.progressCallback = null; // For dynamic spinner updates
 
     // Performance tuning constants
@@ -21,6 +18,10 @@ class GCPProjectFetcher {
     this.QUICK_CHECK_LIMIT = 5; // Only check first 5 billing accounts for quick assessment
     this.LARGE_ORG_THRESHOLD = 5000; // If >5000 total projects, consider it a large org
     this.CONCURRENT_BILLING_LIMIT = 3; // Max concurrent billing account queries
+    
+    // Cache configuration
+    this.cacheDuration = 24 * 60 * 60 * 1000; // 24 hours (much longer than in-memory)
+    this.CACHE_KEY = 'gcp_projects'; // Main cache key for project list
   }
 
   /**
@@ -56,16 +57,25 @@ class GCPProjectFetcher {
 
   /**
    * Fetch all accessible GCP projects with performance optimizations
+   * @param {boolean} forceRefresh - Force refresh of cache
    * @returns {Promise<string[]>} Array of project IDs
    */
-  async fetchProjects() {
-    // Check cache first
-    if (this.cache && this.cacheExpiry && Date.now() < this.cacheExpiry) {
-      this.updateProgress('Using cached projects...');
-      return this.cache;
-    }
-
+  async fetchProjects(forceRefresh = false) {
     try {
+      // Check persistent cache first (unless forced refresh)
+      if (!forceRefresh) {
+        const cachedData = await persistentCache.getProjects(this.CACHE_KEY);
+        if (cachedData && cachedData.projects.length > 0) {
+          this.updateProgress(`Using cached projects (${Math.round(cachedData.age / 1000 / 60)}m old)...`);
+          this.debugLog(`Cache hit: ${cachedData.projects.length} projects, strategy: ${cachedData.strategy}`);
+          return cachedData.projects;
+        } else if (cachedData && cachedData.projects.length === 0) {
+          this.debugLog('Found empty cache entry, will fetch fresh data');
+          // Clear invalid cache entry
+          await persistentCache.clearProjectsCache();
+        }
+      }
+
       // Check if gcloud is available
       if (!(await this.isGcloudAvailable())) {
         this.debugLog('gcloud CLI not available');
@@ -84,9 +94,8 @@ class GCPProjectFetcher {
 
         if (projects.length > 0) {
           this.debugLog(`Found ${projects.length} billing-enabled projects`);
-          // Update cache
-          this.cache = projects;
-          this.cacheExpiry = Date.now() + this.cacheDuration;
+          // Store in persistent cache only if we have valid data
+          await persistentCache.setProjects(this.CACHE_KEY, projects, strategy, this.cacheDuration);
           return projects;
         }
       }
@@ -98,9 +107,12 @@ class GCPProjectFetcher {
       this.debugLog('Using fallback: fetching all active projects');
       const allProjects = await this.fetchAllActiveProjects();
 
-      // Update cache
-      this.cache = allProjects;
-      this.cacheExpiry = Date.now() + this.cacheDuration;
+      // Store in persistent cache only if we have valid data
+      if (allProjects.length > 0) {
+        await persistentCache.setProjects(this.CACHE_KEY, allProjects, 'all-projects', this.cacheDuration);
+      } else {
+        this.debugLog('No projects found, not caching empty result');
+      }
 
       return allProjects;
     } catch (error) {
@@ -114,10 +126,11 @@ class GCPProjectFetcher {
   /**
    * Get project suggestions based on prefix
    * @param {string} prefix - The prefix to filter by
+   * @param {boolean} forceRefresh - Force refresh of cache
    * @returns {Promise<string[]>} Filtered project IDs
    */
-  async getProjectSuggestions(prefix = '') {
-    const projects = await this.fetchProjects();
+  async getProjectSuggestions(prefix = '', forceRefresh = false) {
+    const projects = await this.fetchProjects(forceRefresh);
 
     if (!prefix) return projects;
 
@@ -125,6 +138,43 @@ class GCPProjectFetcher {
     return projects.filter((project) =>
       project.toLowerCase().startsWith(lowerPrefix)
     );
+  }
+
+  /**
+   * Get cache information
+   * @returns {Promise<Object>} Cache statistics and information
+   */
+  async getCacheInfo() {
+    try {
+      const cacheData = await persistentCache.getProjects(this.CACHE_KEY);
+      const stats = await persistentCache.getCacheStats();
+      
+      return {
+        hasCache: !!cacheData,
+        cacheAge: cacheData ? cacheData.age : null,
+        projectCount: cacheData ? cacheData.projects.length : 0,
+        strategy: cacheData ? cacheData.strategy : null,
+        createdAt: cacheData ? cacheData.createdAt : null,
+        expiresAt: cacheData ? cacheData.expiresAt : null,
+        stats
+      };
+    } catch (error) {
+      this.debugLog(`Failed to get cache info: ${error.message}`);
+      return { hasCache: false, stats: {} };
+    }
+  }
+
+  /**
+   * Clear the persistent cache
+   */
+  async clearCache() {
+    try {
+      await persistentCache.clearProjectsCache();
+      this.debugLog('Persistent cache cleared');
+    } catch (error) {
+      this.debugLog(`Failed to clear cache: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
@@ -547,14 +597,10 @@ class GCPProjectFetcher {
   }
 
   /**
-   * Clear the cache
+   * Clear the cache (legacy method, now redirects to persistent cache)
    */
-  clearCache() {
-    this.cache = null;
-    this.cacheExpiry = null;
-    this.billingCache = null;
-    this.billingCacheExpiry = null;
-    this.debugLog('Cache cleared');
+  async clearCacheLegacy() {
+    await this.clearCache();
   }
 }
 

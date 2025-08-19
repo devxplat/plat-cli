@@ -219,6 +219,10 @@ class ClassicCLI {
       .option('--ip <ip>', 'Instance public IP address')
       .option('--user <user>', 'Database user', 'postgres')
       .option('--password <password>', 'Database password')
+      .option('--source-user <user>', 'Source database user')
+      .option('--source-password <password>', 'Source database password')
+      .option('--target-user <user>', 'Target database user')
+      .option('--target-password <password>', 'Target database password')
       .option('--database <database>', 'Specific database', 'postgres')
       .option('--ssl-mode <mode>', 'SSL mode (disable/simple/strict)', 'simple')
       .option('--use-proxy', 'Use Cloud SQL Auth Proxy', false)
@@ -487,7 +491,13 @@ class ClassicCLI {
       if (!options.instance) {
         errors.push('❌ Instance is missing. Use --instance');
       }
-      
+
+      // Determine if using source/target specific parameters or legacy single parameters
+      const hasSourceParams = options.sourceUser || options.sourcePassword;
+      const hasTargetParams = options.targetUser || options.targetPassword;
+      const hasLegacyParams = options.user || options.password;
+      const hasAnySourceTargetFlags = hasSourceParams || hasTargetParams;
+
       // If not using proxy, need IP
       if (!options.useProxy && !process.env.USE_CLOUD_SQL_PROXY) {
         if (!options.ip && !process.env.CLOUDSQL_SOURCE_IP && !process.env.CLOUDSQL_TARGET_IP) {
@@ -498,56 +508,143 @@ class ClassicCLI {
         }
       }
       
-      // Password is always required
-      // For test-connection/list-databases, check both source and target passwords
-      if (!options.password && !process.env.PGPASSWORD_SOURCE && !process.env.PGPASSWORD_TARGET && !process.env.PGPASSWORD) {
-        errors.push('❌ Password is missing. Use --password or set PGPASSWORD_SOURCE/PGPASSWORD_TARGET/PGPASSWORD environment variable');
+      // Validate credentials based on usage pattern
+      if (hasAnySourceTargetFlags) {
+        // New source/target pattern - validate only specified credentials
+        if (hasSourceParams) {
+          if (!options.sourcePassword && !process.env.PGPASSWORD_SOURCE && !process.env.PGPASSWORD) {
+            errors.push('❌ Source password is missing. Use --source-password or set PGPASSWORD_SOURCE environment variable');
+          }
+        }
+        if (hasTargetParams) {
+          if (!options.targetPassword && !process.env.PGPASSWORD_TARGET && !process.env.PGPASSWORD) {
+            errors.push('❌ Target password is missing. Use --target-password or set PGPASSWORD_TARGET environment variable');
+          }
+        }
+      } else if (hasLegacyParams) {
+        // Legacy pattern with explicit --user or --password provided
+        if (!options.password && !process.env.PGPASSWORD_SOURCE && !process.env.PGPASSWORD_TARGET && !process.env.PGPASSWORD) {
+          errors.push('❌ Password is missing. Use --password or set PGPASSWORD_SOURCE/PGPASSWORD_TARGET/PGPASSWORD environment variable');
+        }
+      } else {
+        // No credentials provided at all
+        errors.push('❌ No credentials provided. Use --user/--password for single test or --source-user/--source-password and/or --target-user/--target-password for source/target tests');
       }
       
       if (errors.length > 0) {
         console.log(colors.error('\n⚠️  Missing required parameters:\n'));
         errors.forEach(error => console.log('  ' + error));
         console.log(colors.warning('\n💡 Tips:'));
-        console.log(colors.tertiary('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables for passwords'));
+        console.log(colors.tertiary('  • Legacy mode: Use --user and --password for single connection test'));
+        console.log(colors.tertiary('  • Source/Target mode: Use --source-user/--source-password and/or --target-user/--target-password'));
+        console.log(colors.tertiary('  • You can use PGPASSWORD_SOURCE/PGPASSWORD_TARGET environment variables'));
         console.log(colors.tertiary('  • Use --use-proxy if using Cloud SQL Auth Proxy'));
         console.log(colors.tertiary('  • Get the public IP from GCP Console → SQL → Instance → Connectivity'));
         console.log('');
         process.exit(1);
       }
 
-      console.log(colors.primary('🔌 Testing CloudSQL connection...'));
-
-      // For now, use the connection manager directly
       const { default: ConnectionManager } = await import(
         '../../infrastructure/cloud/gcp-connection-manager.js'
       );
       const connectionManager = new ConnectionManager(this.logger);
 
-      const connectionInfo = {
-        ip: options.ip,
-        user: options.user || 'postgres',
-        password: options.password,
-        sslMode: options.sslMode || 'simple',
-        useProxy: options.useProxy || false
-      };
-
-      const result = await connectionManager.testConnection(
-        options.project,
-        options.instance,
-        options.database,
-        null, // isSource not relevant for test
-        connectionInfo
-      );
-
-      if (result.success) {
-        console.log(colors.success('✅ Connection successful!'));
-        console.log(colors.tertiary(`   Version: ${result.version}`));
-        console.log(colors.tertiary(`   Database: ${result.database}`));
-        console.log(colors.tertiary(`   User: ${result.user}`));
+      const tests = [];
+      
+      if (hasAnySourceTargetFlags) {
+        // Source/Target mode
+        console.log(colors.primary('🔌 Testing CloudSQL connection(s)...'));
+        
+        if (hasSourceParams) {
+          tests.push({
+            type: 'Source',
+            isSource: true,
+            connectionInfo: {
+              ip: options.ip,
+              user: options.sourceUser || 'postgres',
+              password: options.sourcePassword,
+              sslMode: options.sslMode || 'simple',
+              useProxy: options.useProxy || false
+            }
+          });
+        }
+        
+        if (hasTargetParams) {
+          tests.push({
+            type: 'Target',
+            isSource: false,
+            connectionInfo: {
+              ip: options.ip,
+              user: options.targetUser || 'postgres',
+              password: options.targetPassword,
+              sslMode: options.sslMode || 'simple',
+              useProxy: options.useProxy || false
+            }
+          });
+        }
       } else {
-        console.log(colors.error('❌ Connection failed:'), result.error);
+        // Legacy mode
+        console.log(colors.primary('🔌 Testing CloudSQL connection...'));
+        tests.push({
+          type: 'Legacy',
+          isSource: null,
+          connectionInfo: {
+            ip: options.ip,
+            user: options.user || 'postgres',
+            password: options.password,
+            sslMode: options.sslMode || 'simple',
+            useProxy: options.useProxy || false
+          }
+        });
+      }
+
+      let allSuccessful = true;
+      const results = [];
+
+      for (const test of tests) {
+        try {
+          console.log(colors.tertiary(`\n🧪 Testing ${test.type} connection...`));
+          
+          const result = await connectionManager.testConnection(
+            options.project,
+            options.instance,
+            options.database,
+            test.isSource,
+            test.connectionInfo
+          );
+
+          if (result.success) {
+            console.log(colors.success(`✅ ${test.type} connection successful!`));
+            console.log(colors.tertiary(`   Version: ${result.version}`));
+            console.log(colors.tertiary(`   Database: ${result.database}`));
+            console.log(colors.tertiary(`   User: ${result.user}`));
+            results.push({ type: test.type, success: true, result });
+          } else {
+            console.log(colors.error(`❌ ${test.type} connection failed:`), result.error);
+            results.push({ type: test.type, success: false, error: result.error });
+            allSuccessful = false;
+          }
+        } catch (error) {
+          console.log(colors.error(`❌ ${test.type} connection error:`), error.message);
+          results.push({ type: test.type, success: false, error: error.message });
+          allSuccessful = false;
+        }
+      }
+
+      // Summary
+      console.log('\n' + colors.primary('📊 Connection Test Summary:'));
+      results.forEach(result => {
+        if (result.success) {
+          console.log(colors.success(`   ✅ ${result.type}: Connected successfully`));
+        } else {
+          console.log(colors.error(`   ❌ ${result.type}: Failed - ${result.error}`));
+        }
+      });
+
+      if (!allSuccessful) {
         process.exit(1);
       }
+
     } catch (error) {
       console.log(colors.error('❌ Error:'), error.message);
       if (options.verbose) {
@@ -845,7 +942,15 @@ class ClassicCLI {
     console.log(chalk.white(`   Target: ${config.target.project}/${config.target.instance}`));
     
     // Database information
-    if (result.processedDatabases) {
+    if (result.databaseDetails && result.databaseDetails.length > 0) {
+      const databaseNames = result.databaseDetails.map(db => db.name).join(', ');
+      const totalCount = result.databaseDetails.length;
+      if (totalCount === 1) {
+        console.log(chalk.white(`   Database migrated: ${databaseNames}`));
+      } else {
+        console.log(chalk.white(`   Databases migrated: ${databaseNames} (${totalCount} databases)`));
+      }
+    } else if (result.processedDatabases) {
       console.log(chalk.white(`   Databases migrated: ${result.processedDatabases}`));
     } else if (result.databasesToMigrate) {
       console.log(chalk.white(`   Databases migrated: ${result.databasesToMigrate.length}`));
@@ -860,7 +965,7 @@ class ClassicCLI {
       console.log(chalk.white(`   Total size: ${result.totalSize}`));
     }
     if (result.duration) {
-      console.log(chalk.white(`   Duration: ${result.duration}`));
+      console.log(chalk.white(`   Duration: ${this._formatDuration(result.duration)}`));
     }
 
     // Migration mode
