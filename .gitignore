@@ -5,8 +5,7 @@
 Thumbs.db
 tmp/
 temp/
-secret.json
-secret.txt
+
 
 .claude/
 .cursor/
@@ -95,3 +94,10 @@ coverage
 .env.development
 .env.test
 .env.production
+
+
+# MISCELLANEOUS
+###################
+secret.json
+secret.txt
+local_docs/

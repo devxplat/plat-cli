@@ -1,7 +1,7 @@
 {
   "name": "plat-cli",
   "description": "Platform Engineering DevEx CLI - Simplify complex cloud operations with developer experience in mind",
-  "version": "2.0.0",
+  "version": "0.0.1",
   "author": "epicvinny <visuzano@hotmail.com> ()",
   "bugs": {
     "url": "https://github.com/epicvinny/plat-cli/issues",
@@ -47,20 +47,34 @@
     "husky": "^9.1.7",
     "ink-testing-library": "^4.0.0",
     "lint-staged": "latest",
+    "np": "^10.0.7",
     "nyc": "latest",
     "pinst": "^3.0.0",
     "prettier": "latest",
     "remark-cli": "^12.0.1",
     "remark-preset-github": "^4.0.4",
+    "rimraf": "^6.0.1",
     "sinon": "^21.0.0"
   },
   "engines": {
-    "node": ">= 10"
+    "node": ">= 18.0.0"
   },
   "homepage": "https://github.com/epicvinny/plat-cli",
   "keywords": [
-    "lass",
-    "plat-cli"
+    "cli",
+    "cloudsql",
+    "postgresql",
+    "migration",
+    "google-cloud",
+    "gcp",
+    "database",
+    "devops",
+    "platform-engineering",
+    "cloud-migration",
+    "postgres",
+    "sql",
+    "infrastructure",
+    "automation"
   ],
   "license": "MIT",
   "type": "module",
@@ -68,28 +82,62 @@
   "bin": {
     "plat-cli": "./bin/plat-cli"
   },
-  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/epicvinny/plat-cli"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "index.js",
+    "README.md",
+    "LICENSE",
+    "config/",
+    "examples/"
+  ],
   "scripts": {
     "start": "node bin/plat-cli",
     "dev": "node bin/plat-cli",
     "postinstall": "husky",
     "prepack": "pinst --disable",
     "postpack": "pinst --enable",
+    "prepublishOnly": "yarn quality:check",
     "coverage": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
     "coverage:check": "nyc check-coverage",
     "coverage:report": "nyc report --reporter=html",
     "lint": "yarn run lint:js && yarn run lint:md",
     "lint:js": "eslint .",
     "lint:md": "remark . -qfo",
+    "lint:fix": "eslint . --fix",
     "pretest": "yarn run lint:js",
     "test": "cross-env NODE_ENV=test ava",
     "test:ci": "cross-env NODE_ENV=test nyc ava --verbose --fail-fast",
     "test:coverage": "cross-env NODE_ENV=test nyc ava",
     "test:watch": "cross-env NODE_ENV=test ava --watch",
-    "prepare": "husky"
+    "prepare": "husky",
+    "quality:check": "yarn lint && yarn test",
+    "quality:fix": "yarn lint:fix && yarn test",
+    "build:check": "yarn quality:check && npm pack --dry-run",
+    "build:pack": "npm pack",
+    "get:version": "node scripts/get-version.js",
+    "local:install": "node scripts/local-install.js",
+    "local:uninstall": "npm uninstall -g plat-cli",
+    "local:test": "yarn local:install && plat-cli --help && plat-cli --version && yarn local:uninstall",
+    "local:clean": "rimraf plat-cli-*.tgz",
+    "release": "np",
+    "release:patch": "np patch",
+    "release:minor": "np minor",
+    "release:major": "np major",
+    "release:dry": "np --dry-run",
+    "release:preview": "np --preview",
+    "publish:check": "yarn build:check && echo '✅ Ready for publishing!'",
+    "publish:manual": "yarn quality:check && npm publish"
+  },
+  "np": {
+    "yarn": true,
+    "cleanup": true,
+    "tests": true,
+    "preview": true,
+    "branch": "main"
   }
 }

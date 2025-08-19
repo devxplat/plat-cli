@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, Box, Text, Static } from 'ink';
-import { Spinner, StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
+import { StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
 import customTheme from '../interfaces/tui/theme/custom-theme.js';
-import CustomSpinner, { ShimmerSpinner } from '../interfaces/tui/components/CustomSpinner.js';
+import { ShimmerSpinner } from '../interfaces/tui/components/CustomSpinner.js';
 import CustomProgressBar from '../interfaces/tui/components/CustomProgressBar.js';
 
 /**
@@ -268,11 +268,14 @@ class ModernProgressTracker {
     // Update the Ink display with completion
     this._updateInkRender();
 
-    // Unmount immediately - the results view will show the summary
-    if (this.inkInstance) {
-      this.inkInstance.unmount();
-      this.inkInstance = null;
-    }
+    // Keep the completion message visible for a moment before unmounting
+    // This allows users to see the completion status
+    setTimeout(() => {
+      if (this.inkInstance) {
+        this.inkInstance.unmount();
+        this.inkInstance = null;
+      }
+    }, 2000); // Show completion for 2 seconds
 
     this.isActive = false;
   }

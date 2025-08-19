@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { Spinner, StatusMessage } from '@inkjs/ui';
+import { StatusMessage } from '@inkjs/ui';
+import { ShimmerSpinner } from './CustomSpinner.js';
 
 /**
  * Migration Progress Component
@@ -79,8 +80,10 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
     React.createElement(
       Box,
       { gap: 2 },
-      React.createElement(Spinner, {
-        label: `${phase || 'Initializing'}...`
+      React.createElement(ShimmerSpinner, {
+        label: `${phase || 'Initializing'}...`,
+        isVisible: true,
+        status: 'running'
       }),
       React.createElement(
         Text,

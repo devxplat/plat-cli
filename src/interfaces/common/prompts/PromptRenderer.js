@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, Box, Text } from 'ink';
-import { Spinner } from '@inkjs/ui';
+import { ShimmerSpinner } from '../../tui/components/CustomSpinner.js';
 
 /**
  * Helper class for rendering various Ink-based prompts
@@ -17,8 +17,10 @@ class PromptRenderer {
       return React.createElement(
         Box,
         { flexDirection: 'row', gap: 1 },
-        React.createElement(Spinner, {
-          label: message
+        React.createElement(ShimmerSpinner, {
+          label: message,
+          isVisible: true,
+          status: 'running'
         })
       );
     };

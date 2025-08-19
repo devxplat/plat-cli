@@ -228,40 +228,64 @@ const customTheme = extendTheme(defaultTheme, {
       },
     },
     
-    // Custom MultiSelect theme
+    // Custom MultiSelect theme - matches SimpleSelect styling
     MultiSelect: {
       styles: {
         container: (props = {}) => ({
           flexDirection: 'column',
+          gap: 0,
         }),
         option: (props = {}) => {
           const isSelected = props.isSelected || false;
           const isFocused = props.isFocused || false;
-          let color = 'white';
-          let backgroundColor = undefined;
           
-          if (isSelected) {
-            color = 'white';
-            backgroundColor = colorPalettes.dust.primary;
-          } else if (isFocused) {
+          // Match SimpleSelect color scheme exactly
+          let color, backgroundColor, bold = false;
+          
+          if (isFocused) {
+            // Focused item - use primary color and bold text
             color = colorPalettes.dust.primary;
-            backgroundColor = colorPalettes.dust.tertiary;
+            bold = true;
+          } else {
+            // Non-focused items - use tertiary color
+            color = colorPalettes.dust.tertiary;
           }
           
           return {
             color,
             backgroundColor,
-            paddingX: 1,
+            bold,
+            paddingX: 0, // No padding to match SimpleSelect
           };
         },
         checkbox: (props = {}) => {
           const isSelected = props.isSelected || false;
+          const isFocused = props.isFocused || false;
+          
+          // Use ≫ symbol like SimpleSelect for consistency
+          const symbol = isFocused ? '≫' : '  ';
+          const color = isFocused ? colorPalettes.dust.primary : colorPalettes.dust.tertiary;
+          
           return {
-            color: isSelected ? colorPalettes.dust.primary : colorPalettes.dust.secondary,
-            bold: true,
+            color,
+            bold: isFocused,
+            // Override checkbox with our custom symbol
+            content: symbol,
           };
         },
+        // Add hint text styling to match SimpleSelect
+        hint: (props = {}) => ({
+          color: '#ac8500', // Match SimpleSelect hint color
+          marginTop: 1,
+        }),
       },
+      // Custom configuration
+      config: (props = {}) => ({
+        // Use space key for selection like SimpleSelect uses Enter
+        selectKey: ' ',
+        // Custom navigation hints
+        navigationHints: '↑↓: navigate • Space: toggle • Enter: confirm',
+      }),
     },
     
     // Custom TextInput theme

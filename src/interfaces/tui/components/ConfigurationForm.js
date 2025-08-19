@@ -480,10 +480,10 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
               targetInstances: formData.targetProjectScan?.instances || [],
               onPatternDetected: (pattern) => {
                 handleInputChange(currentStep.key, pattern);
-                // Auto-advance after showing pattern for 3 seconds
-                setTimeout(() => handleNext(), 3000);
+                // Don't auto-advance - let user review and press Enter
               },
-              showDetails: true
+              showDetails: true,
+              onConfirm: handleNext
             });
             
           case 'PasswordConfiguration':

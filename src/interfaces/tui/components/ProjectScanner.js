@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import {
-  TextInput,
-  MultiSelect,
-  StatusMessage
-} from '@inkjs/ui';
+import { TextInput, StatusMessage } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
 import CloudSQLManager from '../../../infrastructure/cloud/gcp-cloudsql-manager.js';
-import CustomSpinner from './CustomSpinner.js';
+import { ShimmerSpinner } from './CustomSpinner.js';
 import SimpleSelect from './SimpleSelect.js';
+import CustomMultiSelect from './CustomMultiSelect.js';
+import projectHistory from '../../../infrastructure/config/project-history-manager.js';
+import gcpProjectFetcher from '../../../infrastructure/cloud/gcp-project-fetcher.js';
 
 /**
  * ProjectScanner Component
  * Scans a GCP project for CloudSQL instances and allows multi-selection
  */
-const ProjectScanner = ({ 
-  label = 'Enter GCP Project', 
-  onComplete, 
+const ProjectScanner = ({
+  label = 'Enter GCP Project',
+  onComplete,
   onCancel,
   allowMultiple = true,
   filterByVersion = null,
@@ -26,8 +25,72 @@ const ProjectScanner = ({
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentStep, setCurrentStep] = useState('input'); // input, scanning, selection
+  const [currentStep, setCurrentStep] = useState('loading'); // loading, input, scanning, selection
   const [scanCache, setScanCache] = useState({}); // Cache scan results
+  const [suggestions, setSuggestions] = useState([]); // Autocomplete suggestions
+  const [projectCount, setProjectCount] = useState(0); // Number of projects found
+  const [loadingMessage, setLoadingMessage] = useState(
+    'Loading available GCP projects...'
+  ); // Dynamic loading message
+
+  // Load autocomplete suggestions on component mount
+  useEffect(() => {
+    let mounted = true;
+
+    const loadSuggestions = async () => {
+      try {
+        // Get recent projects from history
+        const recentProjects = projectHistory.getRecentProjects();
+
+        // Set up progress callback for dynamic updates
+        gcpProjectFetcher.setProgressCallback((message) => {
+          if (mounted) {
+            setLoadingMessage(message || 'Loading available GCP projects...');
+          }
+        });
+
+        // Get all accessible projects from GCP with dynamic progress
+        const gcpProjects = await gcpProjectFetcher.fetchProjects();
+
+        // Combine and deduplicate suggestions
+        const allSuggestions = [
+          ...new Set([...recentProjects, ...gcpProjects])
+        ];
+
+        // Sort: recent projects first (maintain their order), then GCP projects alphabetically
+        const sortedSuggestions = [
+          ...recentProjects,
+          ...gcpProjects.filter((p) => !recentProjects.includes(p)).sort()
+        ];
+
+        if (mounted) {
+          setSuggestions(sortedSuggestions);
+          setProjectCount(sortedSuggestions.length);
+          setLoadingMessage(`Found ${sortedSuggestions.length} projects`);
+          // Transition to input state after loading
+          setCurrentStep('input');
+        }
+      } catch (err) {
+        // Silent fail - autocomplete is not critical
+        if (mounted) {
+          // Still transition to input even if loading fails
+          setCurrentStep('input');
+        }
+      } finally {
+        // Clear progress callback
+        if (mounted) {
+          gcpProjectFetcher.setProgressCallback(null);
+        }
+      }
+    };
+
+    loadSuggestions();
+
+    return () => {
+      mounted = false;
+      gcpProjectFetcher.setProgressCallback(null);
+    };
+  }, []);
 
   // Handle keyboard navigation
   useInput((input, key) => {
@@ -46,7 +109,7 @@ const ProjectScanner = ({
     // Check cache first (5 minute TTL)
     const cacheKey = project;
     const cached = scanCache[cacheKey];
-    if (cached && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
+    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
       return cached.data;
     }
 
@@ -62,7 +125,7 @@ const ProjectScanner = ({
         error: () => {},
         log: () => {}
       };
-      
+
       // Initialize CloudSQL Manager with silent logger
       const manager = new CloudSQLManager(silentLogger, project);
       await manager.init();
@@ -83,7 +146,7 @@ const ProjectScanner = ({
               // If database fetch fails, continue with empty array
               databases = [];
             }
-            
+
             return {
               project,
               instance: inst.name,
@@ -118,12 +181,12 @@ const ProjectScanner = ({
 
       // Filter by version if specified
       let filteredInstances = detailedInstances.filter(
-        inst => inst.state === 'RUNNABLE'
+        (inst) => inst.state === 'RUNNABLE'
       );
 
       if (filterByVersion) {
         filteredInstances = filteredInstances.filter(
-          inst => inst.version === filterByVersion
+          (inst) => inst.version === filterByVersion
         );
       }
 
@@ -140,19 +203,38 @@ const ProjectScanner = ({
     } catch (err) {
       // Provide more specific error messages based on error type
       const errorMessage = err.message.toLowerCase();
-      
+
       if (errorMessage.includes('permission') || errorMessage.includes('403')) {
-        throw new Error(`Permission denied: Ensure you have CloudSQL Admin role for project "${project}"`);
-      } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
-        throw new Error(`Project "${project}" not found or you don't have access to it`);
-      } else if (errorMessage.includes('api') && errorMessage.includes('not enabled')) {
-        throw new Error(`CloudSQL API is not enabled for project "${project}". Enable it in the GCP Console`);
-      } else if (errorMessage.includes('invalid') || errorMessage.includes('format')) {
-        throw new Error(`Invalid project ID format: "${project}". Project IDs must be 6-30 lowercase letters, digits, or hyphens`);
+        throw new Error(
+          `Permission denied: Ensure you have CloudSQL Admin role for project "${project}"`
+        );
+      } else if (
+        errorMessage.includes('not found') ||
+        errorMessage.includes('404')
+      ) {
+        throw new Error(
+          `Project "${project}" not found or you don't have access to it`
+        );
+      } else if (
+        errorMessage.includes('api') &&
+        errorMessage.includes('not enabled')
+      ) {
+        throw new Error(
+          `CloudSQL API is not enabled for project "${project}". Enable it in the GCP Console`
+        );
+      } else if (
+        errorMessage.includes('invalid') ||
+        errorMessage.includes('format')
+      ) {
+        throw new Error(
+          `Invalid project ID format: "${project}". Project IDs must be 6-30 lowercase letters, digits, or hyphens`
+        );
       } else if (errorMessage.includes('credentials')) {
-        throw new Error(`Authentication failed. Please run: gcloud auth application-default login`);
+        throw new Error(
+          `Authentication failed. Please run: gcloud auth application-default login`
+        );
       }
-      
+
       // Default error message with more context
       throw new Error(`Failed to scan project "${project}": ${err.message}`);
     } finally {
@@ -166,7 +248,7 @@ const ProjectScanner = ({
       setError('Please enter a valid project ID');
       return;
     }
-    
+
     // Basic validation for GCP project ID format
     const projectId = value.trim();
     if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projectId)) {
@@ -177,18 +259,22 @@ const ProjectScanner = ({
       } else if (/[A-Z]/.test(projectId)) {
         setError('Project ID must use lowercase letters only');
       } else if (/[^a-z0-9-]/.test(projectId)) {
-        setError('Project ID can only contain lowercase letters, numbers, and hyphens');
+        setError(
+          'Project ID can only contain lowercase letters, numbers, and hyphens'
+        );
       } else {
         setError('Invalid project ID format');
       }
       return;
     }
 
+    // Update project name with the full autocompleted value
+    setProjectName(projectId);
     setCurrentStep('scanning');
-    
+
     try {
       const scannedInstances = await scanProject(projectId);
-      
+
       if (scannedInstances.length === 0) {
         setError('No CloudSQL instances found in this project');
         setCurrentStep('input');
@@ -197,6 +283,9 @@ const ProjectScanner = ({
 
       setInstances(scannedInstances);
       setCurrentStep('selection');
+
+      // Add successful project to history for future autocomplete
+      projectHistory.addProject(projectId);
     } catch (err) {
       setError(err.message);
       setCurrentStep('input');
@@ -205,12 +294,7 @@ const ProjectScanner = ({
 
   // Handle instance selection
   const handleInstanceSelection = (selectedValues) => {
-    const selected = selectedValues.map(v => instances[parseInt(v)]);
-    
-    if (selected.length === 0) {
-      setError('Please select at least one instance');
-      return;
-    }
+    const selected = selectedValues.map((v) => instances[parseInt(v)]);
 
     onComplete({
       project: projectName,
@@ -224,6 +308,17 @@ const ProjectScanner = ({
   // Render based on current step
   const renderContent = () => {
     switch (currentStep) {
+      case 'loading':
+        return React.createElement(
+          Box,
+          { flexDirection: 'column', gap: 1 },
+          React.createElement(ShimmerSpinner, {
+            label: loadingMessage,
+            isVisible: true,
+            status: 'running'
+          })
+        );
+
       case 'input':
         return React.createElement(
           Box,
@@ -234,23 +329,31 @@ const ProjectScanner = ({
             `🔍 ${label}:`
           ),
           React.createElement(TextInput, {
-            placeholder: 'Enter GCP project ID...',
+            placeholder:
+              projectCount > 0
+                ? `Enter GCP project ID (${projectCount} available)...`
+                : 'Enter GCP project ID...',
             defaultValue: projectName,
+            suggestions: suggestions,
             onChange: setProjectName,
             onSubmit: handleProjectSubmit
           }),
-          error && React.createElement(
-            StatusMessage,
-            { variant: 'error' },
-            error
-          )
+          error &&
+            React.createElement(StatusMessage, { variant: 'error' }, error),
+          !error &&
+            projectCount > 0 &&
+            React.createElement(
+              Text,
+              { color: colorPalettes.dust.tertiary, dimColor: true },
+              `💡 Start typing to see suggestions • Enter to accept`
+            )
         );
 
       case 'scanning':
         return React.createElement(
           Box,
           { flexDirection: 'column', gap: 1 },
-          React.createElement(CustomSpinner, {
+          React.createElement(ShimmerSpinner, {
             label: `Scanning project ${projectName} for CloudSQL instances...`,
             isVisible: true,
             status: 'running'
@@ -281,44 +384,51 @@ const ProjectScanner = ({
             { color: colorPalettes.dust.primary },
             `🔧 Select CloudSQL Instances (${instances.length} found):`
           ),
-          
+
           // Show version distribution
-          Object.keys(versionGroups).length > 1 && React.createElement(
-            Box,
-            { flexDirection: 'column', marginBottom: 1 },
+          Object.keys(versionGroups).length > 1 &&
             React.createElement(
-              Text,
-              { color: colorPalettes.dust.secondary },
-              'PostgreSQL versions:'
-            ),
-            ...Object.entries(versionGroups).map(([version, insts]) =>
+              Box,
+              { flexDirection: 'column', marginBottom: 1 },
               React.createElement(
                 Text,
-                { key: version, color: 'gray' },
-                `  • PG ${version}: ${insts.length} instance${insts.length > 1 ? 's' : ''}`
+                { color: colorPalettes.dust.secondary },
+                'PostgreSQL versions:'
+              ),
+              ...Object.entries(versionGroups).map(([version, insts]) =>
+                React.createElement(
+                  Text,
+                  { key: version, color: 'gray' },
+                  `  • PG ${version}: ${insts.length} instance${insts.length > 1 ? 's' : ''}`
+                )
               )
-            )
+            ),
+
+          // Selection instruction hint - similar to autocomplete hint on previous page
+          React.createElement(
+            Text,
+            { color: colorPalettes.dust.tertiary, dimColor: false },
+            allowMultiple
+              ? '💡 Use Space to select/deselect instances • ↑↓ to navigate'
+              : '💡 Use ↑↓ to navigate • Enter to select'
           ),
 
-          allowMultiple ? (
-            React.createElement(MultiSelect, {
-              options,
-              defaultValue: [], // Start with nothing selected
-              onSubmit: handleInstanceSelection
-            })
-          ) : (
-            React.createElement(SimpleSelect, {
-              options,
-              onSubmit: (value) => handleInstanceSelection([value]),
-              defaultValue: options[0]?.value
-            })
-          ),
+          allowMultiple
+            ? React.createElement(CustomMultiSelect, {
+                options,
+                defaultValue: [], // Start with nothing selected
+                onSubmit: handleInstanceSelection,
+                showNavigationHints: false // ProjectScanner shows its own navigation hints
+              })
+            : React.createElement(SimpleSelect, {
+                options,
+                onSubmit: (value) => handleInstanceSelection([value]),
+                defaultValue: options[0]?.value,
+                showNavigationHints: false // ProjectScanner shows its own navigation hints
+              }),
 
-          error && React.createElement(
-            StatusMessage,
-            { variant: 'error' },
-            error
-          )
+          error &&
+            React.createElement(StatusMessage, { variant: 'error' }, error)
         );
 
       default:

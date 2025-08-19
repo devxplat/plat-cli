@@ -3,6 +3,25 @@ import { Box, Text } from 'ink';
 import { StatusMessage, Badge } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
 
+// Helper function to format duration
+const _formatDuration = (milliseconds) => {
+  if (typeof milliseconds === 'string') {
+    return milliseconds; // Already formatted
+  }
+  
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+};
+
 /**
  * Simple ExecutionResults component using React.createElement
  */
@@ -65,15 +84,26 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
     const batchResults = result?.batchResults || result;
     const successful = batchResults?.successful?.length || 0;
     const failed = batchResults?.failed?.length || 0;
-    const total = successful + failed;
+    const skipped = batchResults?.skipped?.length || 0;
+    const total = successful + failed + skipped;
     
     return React.createElement(
       Box,
       { flexDirection: 'column', gap: 2, padding: 2 },
       React.createElement(
-        Text,
-        { color: '#FF00A7', bold: true },
-        '✨ Migration Complete!'
+        Box,
+        { flexDirection: 'column', gap: 0 },
+        React.createElement(
+          Text,
+          { color: '#FF00A7', bold: true },
+          '✨ Migration Complete!'
+        ),
+        // Add timing information if available
+        (batchResults?.report?.summary?.duration || result?.duration) && React.createElement(
+          Text,
+          { color: colorPalettes.dust.tertiary },
+          `⏱  Duration: ${_formatDuration(batchResults?.report?.summary?.duration || result?.duration)}`
+        )
       ),
       
       // Summary statistics
@@ -82,8 +112,13 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
         { flexDirection: 'column', gap: 1, marginTop: 1 },
         React.createElement(
           Text,
-          { color: colorPalettes.dust.primary },
-          `Total migrations: ${total}`
+          { color: colorPalettes.dust.primary, bold: true },
+          `📊 Migration Summary`
+        ),
+        React.createElement(
+          Text,
+          { color: colorPalettes.dust.secondary },
+          `Total operations: ${total}`
         ),
         successful > 0 && React.createElement(
           Text,
@@ -94,6 +129,11 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
           Text,
           { color: 'red' },
           `✗ Failed: ${failed}`
+        ),
+        skipped > 0 && React.createElement(
+          Text,
+          { color: 'yellow' },
+          `⊘ Skipped: ${skipped}`
         )
       ),
       
@@ -106,13 +146,22 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
           { color: colorPalettes.dust.secondary, underline: true },
           'Successful migrations:'
         ),
-        ...batchResults.successful.slice(0, 5).map((item, index) =>
-          React.createElement(
+        ...batchResults.successful.slice(0, 5).map((item, index) => {
+          const operation = item.operation || item;
+          const databases = operation.config?.source?.databases || 
+                          operation.result?.migratedDatabases || 
+                          [];
+          const dbCount = Array.isArray(databases) ? databases.length : 0;
+          const displayName = operation.id || 
+                             `${operation.config?.source?.instance} → ${operation.config?.target?.instance}` ||
+                             `Migration ${index + 1}`;
+          
+          return React.createElement(
             Text,
             { key: index, color: 'gray' },
-            `  • ${item.operation?.id || item.id || `Migration ${index + 1}`}`
-          )
-        ),
+            `  • ${displayName}${dbCount > 0 ? ` (${dbCount} databases)` : ''}`
+          );
+        }),
         batchResults.successful.length > 5 && React.createElement(
           Text,
           { color: colorPalettes.dust.tertiary },

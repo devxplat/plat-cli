@@ -3,12 +3,12 @@ import { Box, Text, useInput } from 'ink';
 import {
   TextInput,
   Select,
-  MultiSelect,
   ConfirmInput,
   StatusMessage
 } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
 import ProjectScanner from './ProjectScanner.js';
+import CustomMultiSelect from './CustomMultiSelect.js';
 
 /**
  * Instance Selector Component
@@ -259,7 +259,7 @@ const InstanceSelector = ({ onComplete, onCancel, enableProjectScan = true }) =>
         `📋 Found ${instances.length} instances. Select instances to migrate:`
       ),
       instances.length <= 20 ? (
-        React.createElement(MultiSelect, {
+        React.createElement(CustomMultiSelect, {
           options: selectOptions,
           defaultValue: selectOptions.map(o => o.value), // Select all by default
           onSubmit: (values) => {
@@ -274,7 +274,8 @@ const InstanceSelector = ({ onComplete, onCancel, enableProjectScan = true }) =>
             } else {
               setError('Please select at least one instance');
             }
-          }
+          },
+          showNavigationHints: false // InstanceSelector shows its own navigation hints
         })
       ) : (
         // Too many instances for MultiSelect, use confirmation

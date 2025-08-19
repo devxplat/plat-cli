@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { ProgressBar, Spinner } from '@inkjs/ui';
-import CustomSpinner, { FlowSpinner } from './CustomSpinner.js';
+import { ProgressBar } from '@inkjs/ui';
+import { ShimmerSpinner } from './CustomSpinner.js';
 import CustomProgressBar from './CustomProgressBar.js';
 import { colorPalettes } from '../theme/custom-theme.js';
 
@@ -52,11 +52,10 @@ const ProgressDisplay = ({
       Box,
       { flexDirection: 'row', gap: 1 },
       status === 'running' && !statusIcon
-        ? React.createElement(CustomSpinner, { 
+        ? React.createElement(ShimmerSpinner, { 
             label: message, 
             isVisible: true,
-            status: 'running',
-            compact: true 
+            status: 'running'
           })
         : React.createElement(
             Text,
@@ -73,7 +72,7 @@ const ProgressDisplay = ({
       Box,
       { flexDirection: 'row', gap: 1 },
       status === 'running' && !statusIcon
-        ? React.createElement(FlowSpinner, { 
+        ? React.createElement(ShimmerSpinner, { 
             label: message, 
             isVisible: true,
             status: 'running'

@@ -1,0 +1,92 @@
+# Development files
+src/**/*.test.js
+src/**/*.spec.js
+*.test.js
+*.spec.js
+test/
+tests/
+__tests__/
+coverage/
+.nyc_output/
+
+# Documentation (keep only essential ones)
+docs/
+IMPLEMENTATION*.md
+CLAUDE*.md
+CONNECTION_GUIDE.md
+TESTING-PATTERNS.md
+confirmation-ui-improvements.md
+connection-fixes-summary.md
+USAGE_EXAMPLES.md
+
+# Development configs
+.eslintrc*
+.prettierrc*
+.commitlintrc*
+.lintstagedrc*
+.remarkrc*
+.remarkignore
+.travis.yml
+.editorconfig
+eslint.config.js
+.nycrc
+.gitattributes
+
+# Development scripts
+health-check.sh
+uninstall-debian.sh
+verify-config.js
+scripts/
+
+# Test files
+test-*.txt
+test-*.js
+instances.txt*
+integration.test.js
+*.integration.test.js
+
+# Logs and temp files
+logs/
+tmp/
+temp/
+*.log
+
+# Development dependencies
+yarn.lock
+package-lock.json
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Environment files
+.env*
+!.env.example
+
+# Cache
+node_modules/.cache/
+
+# Build artifacts
+dist/
+build/
+
+# Misc development files
+.cursorrules*
+*.backup.js
+*.draft.*
+*.tmp
+*.temp
+specs/
+
+# NPM Publishing docs (dev only)
+NPM_*.md
+DEVELOPER_GUIDE.md
+QUICK_REFERENCE.md
+SETUP_COMPLETE.md

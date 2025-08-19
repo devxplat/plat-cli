@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { Badge, StatusMessage } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
 
@@ -11,6 +11,7 @@ const MigrationPatternDetector = ({
   sourceInstances = [],
   targetInstances = [],
   onPatternDetected,
+  onConfirm,
   showDetails = true
 }) => {
   // Analyze migration pattern
@@ -111,6 +112,13 @@ const MigrationPatternDetector = ({
   };
 
   const analysis = analyzePattern();
+
+  // Handle keyboard input for confirmation
+  useInput((input, key) => {
+    if (key.return && onConfirm) {
+      onConfirm();
+    }
+  });
 
   // Trigger callback if provided
   React.useEffect(() => {
@@ -228,6 +236,17 @@ const MigrationPatternDetector = ({
         Text,
         { color: 'cyan', bold: true },
         analysis.strategy
+      )
+    ),
+
+    // Add confirmation hint if onConfirm is provided
+    onConfirm && React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(
+        Text,
+        { color: '#ac8500' },
+        '💡 Press Enter to continue with this strategy'
       )
     )
   );

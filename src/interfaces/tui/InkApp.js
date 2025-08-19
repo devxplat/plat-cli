@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { ThemeProvider, Spinner } from '@inkjs/ui';
+import { ThemeProvider } from '@inkjs/ui';
 import customTheme, { colorPalettes } from './theme/custom-theme.js';
-import CustomSpinner, { FlowSpinner } from './components/CustomSpinner.js';
+import { ShimmerSpinner } from './components/CustomSpinner.js';
 
 import MainMenu from './components/MainMenu.js';
 import ConfigurationForm from './components/ConfigurationForm.js';
@@ -174,15 +174,11 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           if (typeof coordinator.progressTracker.complete === 'function') {
             coordinator.progressTracker.complete(result);
           }
-          // Force cleanup if needed
-          if (coordinator.progressTracker.inkInstance) {
-            coordinator.progressTracker.inkInstance.unmount();
-            coordinator.progressTracker.inkInstance = null;
-          }
         }
         
-        // Add a small delay to ensure progress tracker has cleaned up
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Wait for the progress tracker to show completion message
+        // The progress tracker now delays unmounting by 2 seconds
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
         setExecutionResult(result);
         setCurrentView('results');
@@ -276,7 +272,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
         return React.createElement(
           Box,
           { flexDirection: 'row', gap: 1, padding: 2 },
-          React.createElement(FlowSpinner, {
+          React.createElement(ShimmerSpinner, {
             label: 'Validating connections and calculating estimates...',
             isVisible: true,
             status: 'running'
@@ -299,7 +295,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           React.createElement(
             Box,
             { flexDirection: 'row', gap: 1 },
-            React.createElement(CustomSpinner, {
+            React.createElement(ShimmerSpinner, {
               label: 'Initializing migration engine...',
               isVisible: true,
               status: 'running',
@@ -325,7 +321,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
         return React.createElement(
           Box,
           { flexDirection: 'column', gap: 1 },
-          React.createElement(CustomSpinner, {
+          React.createElement(ShimmerSpinner, {
             label: 'Starting migration...',
             isVisible: true,
             status: 'running'
