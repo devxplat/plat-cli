@@ -137,11 +137,17 @@ class BatchMigrationCoordinator {
           instance: task.source.instance,
           databases: Array.isArray(task.databases) ? task.databases : 
                    task.databases === 'all' ? null : 
-                   task.databases?.split(',').map(d => d.trim())
+                   task.databases?.split(',').map(d => d.trim()),
+          user: task.source.user || 'postgres',
+          password: task.source.password,
+          ip: task.source.ip
         },
         target: {
           project: task.target.project,
-          instance: task.target.instance
+          instance: task.target.instance,
+          user: task.target.user || 'postgres',
+          password: task.target.password,
+          ip: task.target.ip
         },
         options: {
           ...mapping.options, // Include all options from mapping first

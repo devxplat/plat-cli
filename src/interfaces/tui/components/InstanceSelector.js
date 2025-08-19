@@ -8,13 +8,15 @@ import {
   StatusMessage
 } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
+import ProjectScanner from './ProjectScanner.js';
 
 /**
  * Instance Selector Component
  * Allows selection of multiple instances for batch migration
+ * Now supports project scanning mode
  */
-const InstanceSelector = ({ onComplete, onCancel }) => {
-  const [mode, setMode] = useState('selection'); // selection, file, manual
+const InstanceSelector = ({ onComplete, onCancel, enableProjectScan = true }) => {
+  const [mode, setMode] = useState('selection'); // selection, file, manual, project-scan
   const [instances, setInstances] = useState([]);
   const [filePath, setFilePath] = useState('');
   const [manualInput, setManualInput] = useState('');
@@ -105,6 +107,7 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
   // Render mode selection
   const renderModeSelection = () => {
     const options = [
+      ...(enableProjectScan ? [{ label: 'Scan GCP project for instances', value: 'project-scan' }] : []),
       { label: 'Load from file (txt/json/csv)', value: 'file' },
       { label: 'Enter instances manually', value: 'manual' },
       { label: 'Use example instances.txt', value: 'example' }
@@ -120,11 +123,14 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
       ),
       React.createElement(Select, {
         options,
-        onChange: (value) => {
+        onChange: async (value) => {
           setMode(value);
           if (value === 'example') {
             // Load the example instances.txt file
             loadInstancesFromFile('instances.txt');
+          } else if (value === 'project-scan') {
+            // Switch to project scan mode
+            setCurrentStep('project-scan');
           } else {
             setCurrentStep('input');
           }
@@ -135,6 +141,21 @@ const InstanceSelector = ({ onComplete, onCancel }) => {
 
   // Render input step based on mode
   const renderInputStep = () => {
+    if (mode === 'project-scan') {
+      // Render the ProjectScanner component
+      return React.createElement(ProjectScanner, {
+        label: 'Enter GCP Project to scan',
+        onComplete: (result) => {
+          setInstances(result.instances);
+          setCurrentStep('confirm');
+        },
+        onCancel: () => {
+          setCurrentStep('mode');
+        },
+        allowMultiple: true
+      });
+    }
+
     if (mode === 'file') {
       return React.createElement(
         Box,

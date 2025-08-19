@@ -141,9 +141,18 @@ class MigrationMapping {
           // 1:1 mapping by index
           this.sources.forEach((source, index) => {
             if (this.targets[index]) {
+              const target = this.targets[index];
               tasks.push({
-                source,
-                target: this.targets[index],
+                source: {
+                  ...source,
+                  password: source.password,
+                  user: source.user || 'postgres'
+                },
+                target: {
+                  ...target,
+                  password: target.password || source.password,
+                  user: target.user || 'postgres'
+                },
                 databases: 'all'
               });
             }
@@ -156,8 +165,16 @@ class MigrationMapping {
         const consolidationTarget = this.targets[0] || this.target;
         this.sources.forEach(source => {
           tasks.push({
-            source,
-            target: consolidationTarget,
+            source: {
+              ...source,
+              password: source.password,
+              user: source.user || 'postgres'
+            },
+            target: {
+              ...consolidationTarget,
+              password: consolidationTarget.password || source.password,
+              user: consolidationTarget.user || 'postgres'
+            },
             databases: source.databases || 'all',
             conflictResolution: this.conflictResolution,
             prefixWith: this.conflictResolution === 'prefix' ? source.instance : null
@@ -170,8 +187,16 @@ class MigrationMapping {
         Object.entries(this.versionMapping).forEach(([version, mapping]) => {
           mapping.sources.forEach(source => {
             tasks.push({
-              source,
-              target: mapping.target,
+              source: {
+                ...source,
+                password: source.password,
+                user: source.user || 'postgres'
+              },
+              target: {
+                ...mapping.target,
+                password: mapping.target.password || source.password,
+                user: mapping.target.user || 'postgres'
+              },
               databases: source.databases || 'all',
               version,
               conflictResolution: this.conflictResolution

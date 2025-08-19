@@ -10,6 +10,9 @@ import customTheme, { colorPalettes } from '../theme/custom-theme.js';
 import OperationConfig from '../../../domain/models/operation-config.js';
 import InstanceSelector from './InstanceSelector.js';
 import SimpleSelect from './SimpleSelect.js';
+import ProjectScanner from './ProjectScanner.js';
+import MigrationPatternDetector from './MigrationPatternDetector.js';
+import PasswordConfiguration from './PasswordConfiguration.js';
 
 // Use custom theme for consistent styling
 
@@ -30,10 +33,41 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'select',
           label: 'Migration Mode',
           options: [
+            { label: 'Interactive (Scan Projects)', value: 'interactive' },
             { label: 'Single instance migration', value: 'single' },
             { label: 'Multiple instances (batch)', value: 'batch' }
           ],
           defaultValue: 'single'
+        },
+        {
+          key: 'sourceProjectScan',
+          type: 'custom',
+          label: 'Source Project and Instances',
+          component: 'ProjectScanner',
+          componentProps: { isSource: true, allowMultiple: true },
+          condition: (data) => data.migrationMode === 'interactive'
+        },
+        {
+          key: 'targetProjectScan',
+          type: 'custom',
+          label: 'Target Project and Instances',
+          component: 'ProjectScanner',
+          componentProps: { isSource: false, allowMultiple: true },
+          condition: (data) => data.migrationMode === 'interactive'
+        },
+        {
+          key: 'migrationPattern',
+          type: 'custom',
+          label: 'Migration Pattern Analysis',
+          component: 'MigrationPatternDetector',
+          condition: (data) => data.migrationMode === 'interactive' && data.sourceProjectScan && data.targetProjectScan
+        },
+        {
+          key: 'passwordConfig',
+          type: 'custom',
+          label: 'Password Configuration',
+          component: 'PasswordConfiguration',
+          condition: (data) => data.migrationMode === 'interactive' && data.sourceProjectScan && data.targetProjectScan
         },
         {
           key: 'sourceSelection',
@@ -63,14 +97,16 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'text',
           label: 'Target GCP Project',
           placeholder: 'Enter target project ID...',
-          required: true
+          required: true,
+          condition: (data) => data.migrationMode !== 'interactive'
         },
         {
           key: 'targetInstance',
           type: 'text',
           label: 'Target CloudSQL Instance',
           placeholder: 'Enter target instance name...',
-          required: true
+          required: true,
+          condition: (data) => data.migrationMode !== 'interactive'
         },
         {
           key: 'batchStrategy',
@@ -144,7 +180,12 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
 
   // Get visible steps based on current form data
   const getVisibleSteps = () => {
-    return allSteps.filter((step) => !step.condition || step.condition(formData));
+    const visible = allSteps.filter((step) => !step.condition || step.condition(formData));
+    // Ensure at least the first step is always visible
+    if (visible.length === 0 && allSteps.length > 0) {
+      return [allSteps[0]];
+    }
+    return visible;
   };
 
   // Track when form data changes (useful for debugging)
@@ -155,7 +196,12 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
   // Get current step
   const getCurrentStep = () => {
     const visibleSteps = getVisibleSteps();
-    if (currentStepIndex >= visibleSteps.length) {
+    if (currentStepIndex < 0 || currentStepIndex >= visibleSteps.length) {
+      // Reset to first step if index is out of bounds
+      if (visibleSteps.length > 0) {
+        setCurrentStepIndex(0);
+        return visibleSteps[0];
+      }
       return null;
     }
     return visibleSteps[currentStepIndex];
@@ -218,6 +264,70 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
 
   // Build final configuration
   const buildFinalConfig = async () => {
+    // Check if interactive migration
+    if (formData.migrationMode === 'interactive' && formData.sourceProjectScan && formData.targetProjectScan) {
+      const { default: MigrationMapping } = await import(
+        '../../../domain/models/migration-mapping.js'
+      );
+
+      const pattern = formData.migrationPattern || {};
+      const passwords = formData.passwordConfig?.passwords || {};
+      const passwordMode = formData.passwordConfig?.mode || 'single';
+      
+      // Get single password if in single mode
+      const singlePassword = passwordMode === 'single' && passwords[Object.keys(passwords)[0]]?.value;
+
+      // Create mapping based on detected pattern
+      const mapping = new MigrationMapping({
+        strategy: pattern.strategy || 'simple',
+        sources: formData.sourceProjectScan.instances.map(inst => ({
+          project: inst.project,
+          instance: inst.instance,
+          databases: inst.databases,
+          user: 'postgres',
+          password: passwordMode === 'single' 
+            ? singlePassword 
+            : passwords[`${inst.project}:${inst.instance}`]?.value,
+          ip: inst.publicIp || inst.ip
+        })),
+        targets: formData.targetProjectScan.instances.map(inst => ({
+          project: inst.project,
+          instance: inst.instance,
+          user: 'postgres',
+          password: passwordMode === 'single' 
+            ? singlePassword 
+            : passwords[`${inst.project}:${inst.instance}`]?.value,
+          ip: inst.publicIp || inst.ip
+        })),
+        conflictResolution: formData.conflictResolution || 'fail',
+        options: {
+          includeAll: true,
+          schemaOnly: formData.dataMode === 'schema',
+          dataOnly: formData.dataMode === 'data',
+          dryRun: formData.dryRun || false,
+          retryAttempts: 3,
+          verbose: false,
+          maxParallel: pattern.pattern === 'N:N' ? 3 : 1
+        },
+        metadata: {
+          pattern: pattern.pattern,
+          sourceCount: pattern.sourceCount,
+          targetCount: pattern.targetCount
+        }
+      });
+
+      return {
+        isBatch: true, // Always treat interactive mode as batch for consistent handling
+        mapping,
+        metadata: {
+          toolName,
+          source: 'interactive-cli',
+          mode: 'interactive',
+          pattern: pattern.pattern
+        }
+      };
+    }
+
     // Check if batch migration
     if (formData.migrationMode === 'batch' && formData.sourceSelection) {
       const { default: MigrationMapping } = await import(
@@ -308,6 +418,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           key: currentStep.key,
           options: currentStep.options,
           defaultValue: savedValue || currentStep.defaultValue,
+          showNavigationHints: false, // ConfigurationForm already shows hints
           onSubmit: (value) => {
             // Convert string 'true'/'false' to boolean for dryRun
             const finalValue = currentStep.key === 'dryRun' 
@@ -333,28 +444,65 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         });
 
       case 'custom':
-        if (currentStep.component === 'InstanceSelector') {
-          return React.createElement(InstanceSelector, {
-            key: currentStep.key,
-            onComplete: (data) => {
-              handleInputChange(currentStep.key, data);
-              handleNext();
-            },
-            onCancel: () => {
-              if (currentStepIndex > 0) {
-                setCurrentStepIndex(prev => prev - 1);
-                setError(null);
-              } else {
-                onCancel?.();
-              }
+        // Handle different custom components
+        const componentProps = {
+          key: currentStep.key,
+          onComplete: (data) => {
+            handleInputChange(currentStep.key, data);
+            handleNext();
+          },
+          onCancel: () => {
+            if (currentStepIndex > 0) {
+              setCurrentStepIndex(prev => prev - 1);
+              setError(null);
+            } else {
+              onCancel?.();
             }
-          });
+          },
+          ...(currentStep.componentProps || {})
+        };
+
+        switch (currentStep.component) {
+          case 'InstanceSelector':
+            return React.createElement(InstanceSelector, componentProps);
+            
+          case 'ProjectScanner':
+            return React.createElement(ProjectScanner, {
+              ...componentProps,
+              label: currentStep.componentProps?.isSource 
+                ? 'Source GCP Project' 
+                : 'Target GCP Project'
+            });
+            
+          case 'MigrationPatternDetector':
+            return React.createElement(MigrationPatternDetector, {
+              sourceInstances: formData.sourceProjectScan?.instances || [],
+              targetInstances: formData.targetProjectScan?.instances || [],
+              onPatternDetected: (pattern) => {
+                handleInputChange(currentStep.key, pattern);
+                // Auto-advance after showing pattern for 3 seconds
+                setTimeout(() => handleNext(), 3000);
+              },
+              showDetails: true
+            });
+            
+          case 'PasswordConfiguration':
+            const allInstances = [
+              ...(formData.sourceProjectScan?.instances || []),
+              ...(formData.targetProjectScan?.instances || [])
+            ];
+            return React.createElement(PasswordConfiguration, {
+              ...componentProps,
+              instances: allInstances
+            });
+            
+          default:
+            return React.createElement(
+              Text,
+              { color: 'red' },
+              `Unknown custom component: ${currentStep.component}`
+            );
         }
-        return React.createElement(
-          Text,
-          { color: 'red' },
-          `Unknown custom component: ${currentStep.component}`
-        );
 
       default:
         return React.createElement(

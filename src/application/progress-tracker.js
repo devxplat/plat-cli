@@ -268,13 +268,11 @@ class ModernProgressTracker {
     // Update the Ink display with completion
     this._updateInkRender();
 
-    // Stop Ink after a delay to show the completion message
-    setTimeout(() => {
-      if (this.inkInstance) {
-        this.inkInstance.unmount();
-        this.inkInstance = null;
-      }
-    }, 3000);
+    // Unmount immediately - the results view will show the summary
+    if (this.inkInstance) {
+      this.inkInstance.unmount();
+      this.inkInstance = null;
+    }
 
     this.isActive = false;
   }

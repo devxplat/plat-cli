@@ -164,6 +164,26 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           null // Progress callback handled internally by coordinator
         );
 
+        // Ensure we have a valid result
+        if (!result) {
+          throw new Error('Batch migration returned no results');
+        }
+
+        // Ensure progress tracker is properly cleaned up
+        if (coordinator.progressTracker) {
+          if (typeof coordinator.progressTracker.complete === 'function') {
+            coordinator.progressTracker.complete(result);
+          }
+          // Force cleanup if needed
+          if (coordinator.progressTracker.inkInstance) {
+            coordinator.progressTracker.inkInstance.unmount();
+            coordinator.progressTracker.inkInstance = null;
+          }
+        }
+        
+        // Add a small delay to ensure progress tracker has cleaned up
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         setExecutionResult(result);
         setCurrentView('results');
       } else {
@@ -301,15 +321,15 @@ const InkApp = ({ coordinator, logger, onExit }) => {
       case 'executing':
         // The progress tracker (managed by coordinator) handles all the display
         // It shows the ShimmerSpinner, progress bars, and all migration details
-        // We just show a minimal placeholder since progress tracker has its own Ink instance
+        // We show a simple spinner while the main progress tracker initializes
         return React.createElement(
           Box,
           { flexDirection: 'column', gap: 1 },
-          React.createElement(
-            Text,
-            { color: colorPalettes.dust.tertiary },
-            '// Migration progress is displayed above //'
-          )
+          React.createElement(CustomSpinner, {
+            label: 'Starting migration...',
+            isVisible: true,
+            status: 'running'
+          })
         );
 
       case 'results':
