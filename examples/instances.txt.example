@@ -1,0 +1,11 @@
+# Example instances file for plat-cli inventory command
+# Format: one instance name per line
+# Lines starting with # are comments and will be ignored
+
+instance-1
+instance-2
+my-postgres-v1
+my-postgres-v2
+production-db
+staging-db
+analytics-db
