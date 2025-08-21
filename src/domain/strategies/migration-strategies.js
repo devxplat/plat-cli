@@ -14,12 +14,10 @@ export const getAvailableStrategies = (pattern) => {
       { label: 'Simple direct migration', value: 'simple' }
     ],
     'N:1': [
-      { label: 'Consolidate to single target (Recommended)', value: 'consolidate' },
-      { label: 'Manual mapping', value: 'manual-mapping' }
+      { label: 'Consolidate to single target (Recommended)', value: 'consolidate' }
     ],
     'N:N': [
       { label: 'Version-based mapping (Recommended)', value: 'version-based' },
-      { label: 'Manual mapping', value: 'manual-mapping' },
       { label: 'Round-robin distribution', value: 'round-robin' }
     ],
     '1:N': [
@@ -28,8 +26,7 @@ export const getAvailableStrategies = (pattern) => {
       { label: 'Split by database pattern', value: 'split-by-database' }
     ],
     'N:M': [
-      { label: 'Manual mapping (Recommended)', value: 'manual-mapping' },
-      { label: 'Version-based mapping', value: 'version-based' },
+      { label: 'Version-based mapping (Recommended)', value: 'version-based' },
       { label: 'Round-robin distribution', value: 'round-robin' }
     ]
   };
@@ -53,7 +50,7 @@ export const getConflictResolutionOptions = (strategy) => {
     baseOptions.push({ label: 'Merge databases', value: 'merge' });
   }
   
-  if (strategy === 'custom' || strategy === 'manual-mapping') {
+  if (strategy === 'custom') {
     baseOptions.push({ label: 'Rename schema', value: 'rename-schema' });
   }
   
@@ -71,7 +68,7 @@ export const getRecommendedStrategy = (pattern) => {
     'N:1': 'consolidate',
     'N:N': 'version-based',
     '1:N': 'distribute',
-    'N:M': 'manual-mapping'
+    'N:M': 'version-based'
   };
 
   return recommendations[pattern] || 'simple';
@@ -116,7 +113,6 @@ export const validateStrategyCompatibility = (strategy, pattern) => {
     'version-based': ['N:N', 'N:M'],
     'round-robin': ['N:N', 'N:M'],
     'split-by-database': ['1:N'],
-    'manual-mapping': ['N:1', 'N:N', '1:N', 'N:M'],
     'custom': ['1:1', 'N:1', 'N:N', '1:N', 'N:M']
   };
 
@@ -148,7 +144,6 @@ export const getAllStrategyValues = () => {
     'version-based',
     'round-robin',
     'split-by-database',
-    'manual-mapping',
     'custom'
   ];
 };
@@ -181,7 +176,6 @@ export const getStrategyDescription = (strategy) => {
     'version-based': 'Map instances based on PostgreSQL version compatibility',
     'round-robin': 'Distribute sources across targets in round-robin fashion',
     'split-by-database': 'Split databases based on naming patterns',
-    'manual-mapping': 'User-defined source to target mapping',
     'custom': 'Custom migration strategy with advanced options'
   };
 

@@ -73,9 +73,9 @@ const MigrationPatternDetector = ({
       recommendations.push('Consider how to split databases across targets');
     } else {
       pattern = 'N:M';
-      strategy = 'manual-mapping';
+      strategy = 'version-based';
       description = 'Complex migration pattern';
-      warnings.push('Complex migration pattern - manual mapping required');
+      warnings.push('Complex migration pattern - using version-based mapping');
     }
 
     // Check cross-region migrations

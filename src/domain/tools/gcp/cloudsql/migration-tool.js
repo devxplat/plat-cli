@@ -345,7 +345,7 @@ class CloudSQLMigrationTool extends ITool {
         '--retry-attempts <number>      Number of retry attempts (default: 3)',
         '--jobs <number>                Parallel jobs for pg_restore (default: 1)',
         '--force-compatibility          Skip version compatibility checks',
-        '--strategy <strategy>          Migration strategy (auto-detected: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, manual-mapping, custom)',
+        '--strategy <strategy>          Migration strategy (auto-detected: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, custom)',
         '--conflict-resolution <method> Conflict resolution (fail, prefix, suffix, merge, rename-schema)',
         '--sources-file <file>          File with source instances for batch migration',
         '--mapping-file <file>          Migration mapping file for complex batch operations'

@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
 import { render, Box, Text, Static, useInput } from 'ink';
-import { StatusMessage, ProgressBar, ThemeProvider, Select } from '@inkjs/ui';
+import { StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
 import customTheme from '../interfaces/interactiveCLI/theme/custom-theme.js';
 import { ShimmerSpinner } from '../interfaces/interactiveCLI/components/CustomSpinner.js';
 import CustomProgressBar from '../interfaces/interactiveCLI/components/CustomProgressBar.js';
 import TodoList from '../interfaces/interactiveCLI/components/TodoList.js';
+import SimpleSelect from '../interfaces/interactiveCLI/components/SimpleSelect.js';
 
 /**
  * Component for selecting next actions after migration completes
  */
 const NextActionsSelector = ({ onAction }) => {
+  // Temporarily simplified to only show exit option
+  // TODO: Fix navigation issues before re-enabling other options
   const options = [
-    { label: '↩️  Return to Main Menu', value: 'menu' },
-    { label: '🔄 Run Another Migration', value: 'retry' },
-    { label: '📋 View Detailed Logs', value: 'logs' },
+    // { label: '↩️  Return to Main Menu', value: 'menu' },
+    // { label: '🔄 Run Another Migration', value: 'retry' },
+    // { label: '📋 View Detailed Logs', value: 'logs' },
     { label: '🚪 Exit CLI', value: 'exit' }
   ];
 
@@ -22,15 +25,21 @@ const NextActionsSelector = ({ onAction }) => {
     { flexDirection: 'column', marginTop: 2 },
     React.createElement(
       Text,
-      { color: 'cyan' },
-      'What would you like to do next?'
+      { color: 'green', bold: true },
+      '✓ Migration completed successfully!'
+    ),
+    React.createElement(
+      Text,
+      { color: 'cyan', marginTop: 1 },
+      'Press Enter to exit'
     ),
     React.createElement(
       Box,
       { marginTop: 1 },
-      React.createElement(Select, {
+      React.createElement(SimpleSelect, {
         options,
-        onChange: (value) => onAction(value)
+        onSubmit: (value) => onAction(value),
+        showNavigationHints: false
       })
     )
   );

@@ -37,8 +37,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'select',
           label: 'Migration Mode',
           options: [
-            { label: 'Guided Migration with AutoDiscovery', value: 'interactive' },
-            { label: 'Batch Migration (Multiple Instances)', value: 'batch' }
+            { label: 'Guided Migration with AutoDiscovery', value: 'interactive' }
           ],
           defaultValue: 'interactive'
         },
@@ -84,7 +83,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           defaultValue: 'fail',
           condition: (data) => (
             (data.migrationMode === 'interactive' && data.migrationStrategy && 
-             ['consolidate', 'manual-mapping'].includes(data.migrationStrategy)) ||
+             data.migrationStrategy === 'consolidate') ||
             (data.migrationMode === 'batch' && data.batchStrategy === 'consolidate')
           )
         },

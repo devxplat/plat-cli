@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput, useFocus, useFocusManager } from 'ink';
 import { TextInput, PasswordInput, Select } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
@@ -35,9 +35,9 @@ const EnhancedInstanceSelector = ({
   const [saveCredentialsState, setSaveCredentialsState] = useState({}); // Track which instances should save credentials
   const [currentStep, setCurrentStep] = useState('instances'); // 'instances', 'databases'
   const [databaseSelection, setDatabaseSelection] = useState('all'); // 'all' or 'specific'
-  const [selectedDatabases, setSelectedDatabases] = useState('');
-  const [availableDatabases, setAvailableDatabases] = useState([]); // List of databases fetched from instances
-  const [selectedDatabasesList, setSelectedDatabasesList] = useState(new Set()); // Selected databases as a Set
+  const [selectedDatabases, setSelectedDatabases] = useState(''); // For manual input fallback
+  const [availableDatabases, setAvailableDatabases] = useState({}); // Map of instanceKey -> database list
+  const [selectedDatabasesList, setSelectedDatabasesList] = useState({}); // Map of instanceKey -> Set of selected databases
   const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [databaseFocusIndex, setDatabaseFocusIndex] = useState(0);
   const [showCredentials, setShowCredentials] = useState(() => {
@@ -100,8 +100,267 @@ const EnhancedInstanceSelector = ({
     loadCredentials();
   }, [instances, initialCredentials, cache]);
 
-  // Handle keyboard navigation
-  useInput((input, key) => {
+  // Handle submission - defined before handleInput to avoid initialization errors
+  const handleSubmit = useCallback(async () => {
+    // Database validation when on database step (only for source instances)
+    if (isSource && currentStep === 'databases' && databaseSelection === 'specific') {
+      const instanceKeys = Array.from(selectedInstances);
+      const hasAnyDatabases = instanceKeys.some(key => (availableDatabases[key] || []).length > 0);
+      
+      if (hasAnyDatabases) {
+        // Check if at least one database is selected across all instances
+        let totalSelected = 0;
+        for (const instanceKey of instanceKeys) {
+          const selected = selectedDatabasesList[instanceKey];
+          if (selected && selected.size > 0) {
+            totalSelected += selected.size;
+          }
+        }
+        if (totalSelected === 0) {
+          setError('Please select at least one database');
+          return;
+        }
+      } else if (!selectedDatabases.trim()) {
+        setError('Please specify database names');
+        return;
+      }
+    }
+
+    // Validate credentials based on mode
+    if (credentialsMode === 'same') {
+      if (!sameCredentials.user || !sameCredentials.password) {
+        setError('Please provide username and password');
+        return;
+      }
+    } else if (credentialsMode === 'individual') {
+      for (const key of selectedInstances) {
+        if (!credentials[key]?.user || !credentials[key]?.password) {
+          setError('Please provide credentials for all selected instances');
+          return;
+        }
+      }
+    }
+
+    // Save credentials if requested and cache is available
+    if (cache && credentialsMode === 'individual') {
+      for (const key of selectedInstances) {
+        if (saveCredentialsState[key]) {
+          const [project, instance] = key.split(':');
+          const creds = credentials[key];
+          await cache.saveCredentials(project, instance, creds.user, creds.password, true);
+        }
+      }
+    }
+
+    // Prepare result
+    const selectedWithCredentials = instances
+      .filter(inst => selectedInstances.has(`${inst.project}:${inst.instance}`))
+      .map(inst => {
+        const key = `${inst.project}:${inst.instance}`;
+        let creds;
+        
+        if (credentialsMode === 'same') {
+          creds = sameCredentials;
+        } else if (credentialsMode === 'env') {
+          creds = {
+            user: process.env[`PGUSER_${inst.instance.toUpperCase().replace(/-/g, '_')}`] || 'postgres',
+            password: process.env[`PGPASSWORD_${inst.instance.toUpperCase().replace(/-/g, '_')}`] || ''
+          };
+        } else {
+          creds = credentials[key];
+        }
+        
+        // Add databases based on selection
+        const instResult = {
+          ...inst,
+          credentials: creds
+        };
+        
+        // Only add databases for source instances
+        if (isSource) {
+          if (databaseSelection === 'specific') {
+            // Check if we have fetched databases for this instance
+            const instanceDatabases = availableDatabases[key];
+            
+            if (instanceDatabases && instanceDatabases.length > 0) {
+              // Use the selected databases for this specific instance
+              const selectedForInstance = selectedDatabasesList[key];
+              if (selectedForInstance && selectedForInstance.size > 0) {
+                instResult.databases = Array.from(selectedForInstance);
+              } else {
+                // If no databases selected for this instance, skip it or use all
+                instResult.databases = [];
+              }
+            } else if (selectedDatabases.trim()) {
+              // Manual input fallback - apply to all instances
+              instResult.databases = selectedDatabases.split(',').map(db => db.trim()).filter(db => db);
+            }
+          } else if (databaseSelection === 'all') {
+            instResult.databases = 'all';
+          }
+        }
+        
+        return instResult;
+      });
+
+    onSubmit({
+      project: instances[0]?.project,
+      instances: selectedWithCredentials,
+      credentialsMode,
+      totalFound: instances.length,
+      totalSelected: selectedInstances.size,
+      isSource,
+      databaseSelection: isSource ? databaseSelection : undefined
+      // Note: databases are now included per-instance in the instances array
+    });
+  }, [
+    currentStep, databaseSelection, selectedDatabasesList, availableDatabases,
+    selectedDatabases, credentialsMode, sameCredentials, credentials,
+    selectedInstances, instances, isSource, onSubmit, cache, saveCredentialsState
+  ]);
+
+  // Handle moving to database selection step - defined before handleInput
+  const handleMoveToDatabase = useCallback(async () => {
+    
+    // Validate selection
+    if (selectedInstances.size === 0) {
+      setError('Please select at least one instance');
+      return;
+    }
+
+    // Validate credentials based on mode
+    if (credentialsMode === 'same') {
+      if (!sameCredentials.user || !sameCredentials.password) {
+        setError('Please provide username and password for all instances');
+        return;
+      }
+    } else if (credentialsMode === 'individual') {
+      for (const key of selectedInstances) {
+        if (!credentials[key]?.user || !credentials[key]?.password) {
+          setError('Please provide credentials for all selected instances');
+          return;
+        }
+      }
+    }
+
+    // Fetch databases from ALL selected instances
+    setLoadingDatabases(true);
+    setCurrentStep('databases');
+    setFocusedField('db-radio-all'); // Set initial focus for database step
+    setError(null);
+
+    try {
+      // Import ConnectionManager to fetch databases
+      const ConnectionManager = (await import('../../../infrastructure/cloud/gcp-connection-manager.js')).default;
+      
+      // Create a proper logger with all required methods
+      const logger = {
+        debug: (msg, data) => {}, // Silent in production
+        info: (msg) => {}, // Silent in production
+        warn: (msg) => console.warn('WARN:', msg),
+        error: (msg, error) => console.error('ERROR:', msg, error),
+        logConnectionError: (key, error, attempt, maxAttempts) => {
+          // Only log if it's the last attempt
+          if (attempt === maxAttempts) {
+            console.error(`Connection failed for ${key}:`, error.message);
+          }
+        },
+        logConnectionAttempt: () => {}, // Silent
+        logConnectionSuccess: () => {}, // Silent
+        logRetry: () => {} // Silent
+      };
+      
+      const connectionManager = new ConnectionManager(logger);
+      const allDatabases = {};
+      const allSelectedDatabases = {};
+      let hasAnyDatabases = false;
+      
+      // Fetch databases for ALL selected instances
+      for (const instanceKey of selectedInstances) {
+        const [project, instanceName] = instanceKey.split(':');
+        const instance = instances.find(inst => 
+          `${inst.project}:${inst.instance}` === instanceKey
+        );
+        
+        if (instance) {
+          // Get credentials for this instance
+          let creds;
+          if (credentialsMode === 'same') {
+            creds = sameCredentials;
+          } else if (credentialsMode === 'individual') {
+            creds = credentials[instanceKey];
+          } else {
+            creds = {
+              user: process.env[`PGUSER_${instance.instance.toUpperCase().replace(/-/g, '_')}`] || 'postgres',
+              password: process.env[`PGPASSWORD_${instance.instance.toUpperCase().replace(/-/g, '_')}`] || ''
+            };
+          }
+          
+          try {
+            // Create connection info for the database query
+            const connectionInfo = {
+              ip: instance.publicIp || instance.ip,
+              user: creds.user,
+              password: creds.password,
+              useProxy: false
+            };
+            
+            // Fetch databases using ConnectionManager
+            const databaseList = await connectionManager.listDatabases(
+              instance.project,
+              instance.instance,
+              isSource,
+              connectionInfo
+            );
+            
+            // Extract database names from the result
+            const databases = databaseList.map(db => db.name);
+            
+            allDatabases[instanceKey] = databases;
+            allSelectedDatabases[instanceKey] = new Set();
+            
+            if (databases.length > 0) {
+              hasAnyDatabases = true;
+            }
+          } catch (error) {
+            // If we can't fetch databases for this instance, mark it as failed
+            console.error(`Failed to fetch databases for ${instanceKey}:`, error.message);
+            allDatabases[instanceKey] = [];
+            allSelectedDatabases[instanceKey] = new Set();
+          } finally {
+            // Clean up connection if needed
+            try {
+              await connectionManager.closeConnection(instance.project, instance.instance, 'postgres');
+            } catch (err) {
+              // Ignore cleanup errors
+            }
+          }
+        }
+      }
+      
+      setAvailableDatabases(allDatabases);
+      setSelectedDatabasesList(allSelectedDatabases);
+      
+      // If we have databases, default to specific selection
+      if (hasAnyDatabases) {
+        setDatabaseSelection('specific');
+        setFocusedField('db-inst-0-db-0'); // Updated focus field format
+      } else {
+        // If no databases could be fetched, show manual input option
+        setError('Could not fetch database lists. You can still select "all databases" or enter names manually.');
+      }
+    } catch (error) {
+      setError('Failed to fetch databases: ' + error.message);
+    } finally {
+      setLoadingDatabases(false);
+    }
+  }, [
+    selectedInstances, credentialsMode, sameCredentials, credentials,
+    instances, isSource, cache
+  ]);
+
+  // Create input handler with dependencies
+  const handleInput = useCallback((input, key) => {
     // Handle escape
     if (key.escape) {
       if (editingField) {
@@ -152,6 +411,55 @@ const EnhancedInstanceSelector = ({
       return;
     }
 
+    // Enter to edit field or submit - MOVED HERE to process before navigation blocks
+    if (key.return) {
+      if (currentStep === 'instances') {
+        if (focusedField === 'user' || focusedField === 'password' || 
+            focusedField === 'same-user' || focusedField === 'same-password') {
+          setEditingField(focusedField);
+        } else if (focusedField === 'checkbox' || focusedField === 'mode') {
+          // For source instances, move to database selection
+          // For target instances, submit directly
+          if (isSource) {
+            handleMoveToDatabase();
+          } else {
+            handleSubmit();
+          }
+        }
+      } else if (currentStep === 'databases') {
+        // On database step, handle database selection inputs
+        if (focusedField === 'db-radio-all') {
+          // Select "all databases" and submit
+          setDatabaseSelection('all');
+          setSelectedDatabasesList({});
+          handleSubmit();
+        } else if (focusedField === 'db-radio-specific') {
+          // Select "specific databases" and move focus to database list or input
+          setDatabaseSelection('specific');
+          const instanceKeys = Array.from(selectedInstances);
+          const hasAnyDatabases = instanceKeys.some(key => (availableDatabases[key] || []).length > 0);
+          
+          if (hasAnyDatabases) {
+            // Find first instance with databases
+            for (let i = 0; i < instanceKeys.length; i++) {
+              const databases = availableDatabases[instanceKeys[i]] || [];
+              if (databases.length > 0) {
+                setFocusedField(`db-inst-${i}-db-0`);
+                break;
+              }
+            }
+          } else {
+            setFocusedField('db-input');
+          }
+        } else if (focusedField === 'db-input') {
+          setEditingField('db-input');
+        } else {
+          // For checkboxes or other fields, submit
+          handleSubmit();
+        }
+      }
+    }
+
     // Database step navigation
     if (currentStep === 'databases') {
       if (key.upArrow) {
@@ -159,10 +467,25 @@ const EnhancedInstanceSelector = ({
           setFocusedField('db-radio-all');
         } else if (focusedField === 'db-radio-all') {
           // Stay at top
-        } else if (focusedField.startsWith('db-checkbox-')) {
-          const currentIndex = parseInt(focusedField.replace('db-checkbox-', ''));
-          if (currentIndex > 0) {
-            setFocusedField(`db-checkbox-${currentIndex - 1}`);
+        } else if (focusedField.startsWith('db-inst-')) {
+          // Navigation for per-instance database checkboxes
+          const parts = focusedField.split('-');
+          const instIndex = parseInt(parts[2]);
+          const dbIndex = parseInt(parts[4]);
+          
+          if (dbIndex > 0) {
+            // Move to previous database in same instance
+            setFocusedField(`db-inst-${instIndex}-db-${dbIndex - 1}`);
+          } else if (instIndex > 0) {
+            // Move to last database of previous instance
+            const instanceKeys = Array.from(selectedInstances);
+            const prevInstanceKey = instanceKeys[instIndex - 1];
+            const prevDatabases = availableDatabases[prevInstanceKey] || [];
+            if (prevDatabases.length > 0) {
+              setFocusedField(`db-inst-${instIndex - 1}-db-${prevDatabases.length - 1}`);
+            } else {
+              setFocusedField('db-radio-specific');
+            }
           } else {
             setFocusedField('db-radio-specific');
           }
@@ -173,13 +496,36 @@ const EnhancedInstanceSelector = ({
         if (focusedField === 'db-radio-all') {
           setFocusedField('db-radio-specific');
         } else if (focusedField === 'db-radio-specific') {
-          if (databaseSelection === 'specific' && availableDatabases.length > 0) {
-            setFocusedField('db-checkbox-0');
+          if (databaseSelection === 'specific') {
+            // Move to first database of first instance with databases
+            const instanceKeys = Array.from(selectedInstances);
+            for (let i = 0; i < instanceKeys.length; i++) {
+              const databases = availableDatabases[instanceKeys[i]] || [];
+              if (databases.length > 0) {
+                setFocusedField(`db-inst-${i}-db-0`);
+                break;
+              }
+            }
           }
-        } else if (focusedField.startsWith('db-checkbox-')) {
-          const currentIndex = parseInt(focusedField.replace('db-checkbox-', ''));
-          if (currentIndex < availableDatabases.length - 1) {
-            setFocusedField(`db-checkbox-${currentIndex + 1}`);
+        } else if (focusedField.startsWith('db-inst-')) {
+          // Navigation for per-instance database checkboxes
+          const parts = focusedField.split('-');
+          const instIndex = parseInt(parts[2]);
+          const dbIndex = parseInt(parts[4]);
+          const instanceKeys = Array.from(selectedInstances);
+          const currentInstanceKey = instanceKeys[instIndex];
+          const currentDatabases = availableDatabases[currentInstanceKey] || [];
+          
+          if (dbIndex < currentDatabases.length - 1) {
+            // Move to next database in same instance
+            setFocusedField(`db-inst-${instIndex}-db-${dbIndex + 1}`);
+          } else if (instIndex < instanceKeys.length - 1) {
+            // Move to first database of next instance
+            const nextInstanceKey = instanceKeys[instIndex + 1];
+            const nextDatabases = availableDatabases[nextInstanceKey] || [];
+            if (nextDatabases.length > 0) {
+              setFocusedField(`db-inst-${instIndex + 1}-db-0`);
+            }
           }
         }
       }
@@ -188,21 +534,37 @@ const EnhancedInstanceSelector = ({
       if (input === ' ') {
         if (focusedField === 'db-radio-all') {
           setDatabaseSelection('all');
-          setSelectedDatabasesList(new Set()); // Clear selections
+          setSelectedDatabasesList({}); // Clear all selections
         } else if (focusedField === 'db-radio-specific') {
           setDatabaseSelection('specific');
-          if (availableDatabases.length > 0) {
-            setFocusedField('db-checkbox-0');
+          // Move to first database if available
+          const instanceKeys = Array.from(selectedInstances);
+          for (let i = 0; i < instanceKeys.length; i++) {
+            const databases = availableDatabases[instanceKeys[i]] || [];
+            if (databases.length > 0) {
+              setFocusedField(`db-inst-${i}-db-0`);
+              break;
+            }
           }
-        } else if (focusedField.startsWith('db-checkbox-')) {
-          const currentIndex = parseInt(focusedField.replace('db-checkbox-', ''));
-          const dbName = availableDatabases[currentIndex];
-          const newSelected = new Set(selectedDatabasesList);
+        } else if (focusedField.startsWith('db-inst-')) {
+          // Toggle database selection for specific instance
+          const parts = focusedField.split('-');
+          const instIndex = parseInt(parts[2]);
+          const dbIndex = parseInt(parts[4]);
+          const instanceKeys = Array.from(selectedInstances);
+          const instanceKey = instanceKeys[instIndex];
+          const databases = availableDatabases[instanceKey] || [];
+          const dbName = databases[dbIndex];
           
-          if (newSelected.has(dbName)) {
-            newSelected.delete(dbName);
+          const newSelected = { ...selectedDatabasesList };
+          if (!newSelected[instanceKey]) {
+            newSelected[instanceKey] = new Set();
+          }
+          
+          if (newSelected[instanceKey].has(dbName)) {
+            newSelected[instanceKey].delete(dbName);
           } else {
-            newSelected.add(dbName);
+            newSelected[instanceKey].add(dbName);
           }
           
           setSelectedDatabasesList(newSelected);
@@ -310,26 +672,6 @@ const EnhancedInstanceSelector = ({
       }
     }
 
-    // Enter to edit field or submit
-    if (key.return) {
-      if (currentStep === 'instances') {
-        if (focusedField === 'user' || focusedField === 'password' || 
-            focusedField === 'same-user' || focusedField === 'same-password') {
-          setEditingField(focusedField);
-        } else if (focusedField === 'checkbox' || focusedField === 'mode') {
-          // Move to database selection instead of submitting directly
-          handleMoveToDatabase();
-        }
-      } else if (currentStep === 'databases') {
-        // On database step, handle database selection inputs
-        if (focusedField === 'db-input') {
-          setEditingField('db-input');
-        } else {
-          handleSubmit();
-        }
-      }
-    }
-
     // Ctrl+A to toggle credentials mode
     if (key.ctrl && input === 'a') {
       const modes = ['individual', 'same', 'env'];
@@ -337,7 +679,16 @@ const EnhancedInstanceSelector = ({
       const nextIdx = (currentIdx + 1) % modes.length;
       setCredentialsMode(modes[nextIdx]);
     }
-  });
+  }, [
+    currentStep, focusedField, editingField, databaseSelection,
+    selectedInstances, selectedDatabasesList, availableDatabases,
+    credentials, credentialsMode, sameCredentials, instances,
+    selectedDatabases, isSource, onCancel, handleSubmit, handleMoveToDatabase,
+    focusedIndex
+  ]);
+
+  // Use the input handler
+  useInput(handleInput);
 
   // Handle credential input
   const handleCredentialChange = (instanceKey, field, value) => {
@@ -355,192 +706,6 @@ const EnhancedInstanceSelector = ({
         }
       });
     }
-  };
-
-  // Handle moving to database selection step
-  const handleMoveToDatabase = async () => {
-    // Validate selection
-    if (selectedInstances.size === 0) {
-      setError('Please select at least one instance');
-      return;
-    }
-
-    // Validate credentials based on mode
-    if (credentialsMode === 'same') {
-      if (!sameCredentials.user || !sameCredentials.password) {
-        setError('Please provide username and password');
-        return;
-      }
-    } else if (credentialsMode === 'individual') {
-      for (const key of selectedInstances) {
-        if (!credentials[key]?.user || !credentials[key]?.password) {
-          setError('Please provide credentials for all selected instances');
-          return;
-        }
-      }
-    }
-
-    // Fetch databases from the first selected instance
-    setLoadingDatabases(true);
-    setCurrentStep('databases');
-    setFocusedField('db-radio-all'); // Set initial focus for database step
-    setError(null);
-
-    try {
-      // Get the first selected instance for database discovery
-      const firstInstanceKey = Array.from(selectedInstances)[0];
-      const [project, instanceName] = firstInstanceKey.split(':');
-      const instance = instances.find(inst => 
-        `${inst.project}:${inst.instance}` === firstInstanceKey
-      );
-      
-      if (instance) {
-        // Get credentials for this instance
-        let creds;
-        if (credentialsMode === 'same') {
-          creds = sameCredentials;
-        } else if (credentialsMode === 'individual') {
-          creds = credentials[firstInstanceKey];
-        } else {
-          creds = {
-            user: process.env[`PGUSER_${instance.instance.toUpperCase().replace(/-/g, '_')}`] || 'postgres',
-            password: process.env[`PGPASSWORD_${instance.instance.toUpperCase().replace(/-/g, '_')}`] || ''
-          };
-        }
-
-        // Import and use the database discovery function
-        const { exec } = await import('child_process');
-        const { promisify } = await import('util');
-        const execAsync = promisify(exec);
-        
-        // Build psql command to list databases
-        const psqlCommand = `PGPASSWORD="${creds.password}" psql -h ${instance.publicIp || instance.ip} -U ${creds.user} -d postgres -t -c "SELECT datname FROM pg_database WHERE datallowconn = true AND datname NOT IN ('template0', 'template1', 'postgres', 'cloudsqladmin') ORDER BY datname;"`;
-        
-        try {
-          const { stdout } = await execAsync(psqlCommand, { 
-            timeout: 10000,
-            env: { ...process.env, PGPASSWORD: creds.password }
-          });
-          
-          const databases = stdout
-            .split('\n')
-            .map(db => db.trim())
-            .filter(db => db.length > 0);
-          
-          setAvailableDatabases(databases);
-          
-          // If we have databases, default to specific selection
-          if (databases.length > 0) {
-            setDatabaseSelection('specific');
-            setFocusedField('db-checkbox-0');
-          }
-        } catch (error) {
-          // If we can't fetch databases, fall back to manual input
-          console.error('Failed to fetch databases:', error.message);
-          setAvailableDatabases([]);
-          setError('Could not fetch database list. You can still select "all databases" or enter names manually.');
-        }
-      }
-    } catch (error) {
-      setError('Failed to fetch databases: ' + error.message);
-    } finally {
-      setLoadingDatabases(false);
-    }
-  };
-
-  // Handle submission
-  const handleSubmit = async () => {
-    // Database validation when on database step
-    if (currentStep === 'databases' && databaseSelection === 'specific') {
-      if (availableDatabases.length > 0 && selectedDatabasesList.size === 0) {
-        setError('Please select at least one database');
-        return;
-      } else if (availableDatabases.length === 0 && !selectedDatabases.trim()) {
-        setError('Please specify database names');
-        return;
-      }
-    }
-
-    // Validate credentials based on mode
-    if (credentialsMode === 'same') {
-      if (!sameCredentials.user || !sameCredentials.password) {
-        setError('Please provide username and password');
-        return;
-      }
-    } else if (credentialsMode === 'individual') {
-      for (const key of selectedInstances) {
-        if (!credentials[key]?.user || !credentials[key]?.password) {
-          setError('Please provide credentials for all selected instances');
-          return;
-        }
-      }
-    }
-
-    // Save credentials if requested and cache is available
-    if (cache && credentialsMode === 'individual') {
-      for (const key of selectedInstances) {
-        if (saveCredentialsState[key]) {
-          const [project, instance] = key.split(':');
-          const creds = credentials[key];
-          await cache.saveCredentials(project, instance, creds.user, creds.password, true);
-        }
-      }
-    }
-
-    // Prepare result
-    const selectedWithCredentials = instances
-      .filter(inst => selectedInstances.has(`${inst.project}:${inst.instance}`))
-      .map(inst => {
-        const key = `${inst.project}:${inst.instance}`;
-        let creds;
-        
-        if (credentialsMode === 'same') {
-          creds = sameCredentials;
-        } else if (credentialsMode === 'env') {
-          creds = {
-            user: process.env[`PGUSER_${inst.instance.toUpperCase().replace(/-/g, '_')}`] || 'postgres',
-            password: process.env[`PGPASSWORD_${inst.instance.toUpperCase().replace(/-/g, '_')}`] || ''
-          };
-        } else {
-          creds = credentials[key];
-        }
-        
-        // Add databases based on selection
-        const instResult = {
-          ...inst,
-          credentials: creds
-        };
-        
-        // Only add databases for source instances
-        if (isSource) {
-          if (databaseSelection === 'specific') {
-            // Use selected checkboxes if available, otherwise use manual input
-            if (availableDatabases.length > 0) {
-              instResult.databases = Array.from(selectedDatabasesList);
-            } else if (selectedDatabases.trim()) {
-              instResult.databases = selectedDatabases.split(',').map(db => db.trim()).filter(db => db);
-            }
-          } else if (databaseSelection === 'all') {
-            instResult.databases = 'all';
-          }
-        }
-        
-        return instResult;
-      });
-
-    onSubmit({
-      project: instances[0]?.project,
-      instances: selectedWithCredentials,
-      credentialsMode,
-      totalFound: instances.length,
-      totalSelected: selectedInstances.size,
-      isSource,
-      databaseSelection: isSource ? databaseSelection : undefined,
-      databases: isSource && databaseSelection === 'specific' ? 
-                 (availableDatabases.length > 0 ? Array.from(selectedDatabasesList) :
-                  selectedDatabases.split(',').map(db => db.trim()).filter(db => db)) : 
-                 isSource && databaseSelection === 'all' ? 'all' : undefined
-    });
   };
 
   // Render credential input fields
@@ -626,15 +791,6 @@ const EnhancedInstanceSelector = ({
     );
   };
 
-  // Group instances by version
-  const versionGroups = {};
-  instances.forEach(inst => {
-    const version = inst.version || 'Unknown';
-    if (!versionGroups[version]) {
-      versionGroups[version] = [];
-    }
-    versionGroups[version].push(inst);
-  });
 
   // Render database selection step
   if (currentStep === 'databases' && isSource) {
@@ -700,59 +856,93 @@ const EnhancedInstanceSelector = ({
       databaseSelection === 'specific' && !loadingDatabases && React.createElement(
         Box,
         { flexDirection: 'column', marginTop: 1, marginLeft: 4 },
-        // Show checkbox list if we have databases
-        availableDatabases.length > 0 ? React.createElement(
-          Box,
-          { flexDirection: 'column', gap: 0 },
-          React.createElement(
-            Text,
-            { color: colorPalettes.dust.tertiary, marginBottom: 0 },
-            `Found ${availableDatabases.length} database${availableDatabases.length > 1 ? 's' : ''}. Select which to migrate:`
-          ),
-          ...availableDatabases.map((db, index) => {
-            const isSelected = selectedDatabasesList.has(db);
-            const isFocused = focusedField === `db-checkbox-${index}`;
-            
+        // Show databases grouped by instance
+        (() => {
+          const instanceKeys = Array.from(selectedInstances);
+          const hasAnyDatabases = instanceKeys.some(key => (availableDatabases[key] || []).length > 0);
+          
+          if (hasAnyDatabases) {
+            // Render databases grouped by instance
             return React.createElement(
               Box,
-              { key: db },
+              { flexDirection: 'column', gap: 1 },
+              ...instanceKeys.map((instanceKey, instIndex) => {
+                const databases = availableDatabases[instanceKey] || [];
+                const instance = instances.find(inst => 
+                  `${inst.project}:${inst.instance}` === instanceKey
+                );
+                
+                if (databases.length === 0) {
+                  return React.createElement(
+                    Box,
+                    { key: instanceKey, flexDirection: 'column', marginBottom: 1 },
+                    React.createElement(
+                      Text,
+                      { color: colorPalettes.dust.tertiary },
+                      `📦 ${instance?.label || instanceKey}: No databases found`
+                    )
+                  );
+                }
+                
+                return React.createElement(
+                  Box,
+                  { key: instanceKey, flexDirection: 'column', marginBottom: 1 },
+                  React.createElement(
+                    Text,
+                    { color: colorPalettes.dust.secondary, bold: true },
+                    `📦 ${instance?.label || instanceKey}:`
+                  ),
+                  ...databases.map((db, dbIndex) => {
+                    const isSelected = selectedDatabasesList[instanceKey]?.has(db) || false;
+                    const isFocused = focusedField === `db-inst-${instIndex}-db-${dbIndex}`;
+                    
+                    return React.createElement(
+                      Box,
+                      { key: `${instanceKey}-${db}`, marginLeft: 2 },
+                      React.createElement(
+                        Text,
+                        { 
+                          color: isFocused ? 'cyan' : isSelected ? 'green' : 'white',
+                          bold: isFocused
+                        },
+                        `[${isSelected ? '✓' : ' '}] ${db}`
+                      )
+                    );
+                  })
+                );
+              })
+            );
+          } else {
+            // No databases found for any instance - show manual input
+            return React.createElement(
+              Box,
+              { flexDirection: 'column' },
               React.createElement(
                 Text,
-                { 
-                  color: isFocused ? 'cyan' : isSelected ? 'green' : 'white',
-                  bold: isFocused
-                },
-                `  [${isSelected ? '✓' : ' '}] ${db}`
-              )
+                { color: colorPalettes.dust.tertiary },
+                'Could not fetch database list. Enter names manually:'
+              ),
+              editingField === 'db-input' ?
+                React.createElement(TextInput, {
+                  defaultValue: selectedDatabases,
+                  placeholder: 'e.g., db1, db2, db3',
+                  onSubmit: (value) => {
+                    setSelectedDatabases(value);
+                    setEditingField(null);
+                    setError(null);
+                  }
+                }) :
+                React.createElement(
+                  Text,
+                  { 
+                    color: focusedField === 'db-input' ? 'cyan' : 'white',
+                    underline: focusedField === 'db-input'
+                  },
+                  `[${selectedDatabases || 'Enter database names...'}]`
+                )
             );
-          })
-        ) : React.createElement(
-          Box,
-          { flexDirection: 'column' },
-          React.createElement(
-            Text,
-            { color: colorPalettes.dust.tertiary },
-            'Could not fetch database list. Enter names manually:'
-          ),
-          editingField === 'db-input' ?
-            React.createElement(TextInput, {
-              defaultValue: selectedDatabases,
-              placeholder: 'e.g., db1, db2, db3',
-              onSubmit: (value) => {
-                setSelectedDatabases(value);
-                setEditingField(null);
-                setError(null);
-              }
-            }) :
-            React.createElement(
-              Text,
-              { 
-                color: focusedField === 'db-input' ? 'cyan' : 'white',
-                underline: focusedField === 'db-input'
-              },
-              `[${selectedDatabases || 'Enter database names...'}]`
-            )
-        )
+          }
+        })()
       ),
       
       // Navigation hints
@@ -762,9 +952,13 @@ const EnhancedInstanceSelector = ({
         React.createElement(
           Text,
           { color: colorPalettes.dust.tertiary },
-          availableDatabases.length > 0 && databaseSelection === 'specific' ?
-            '↑↓: navigate • Space: toggle • Enter: confirm • Esc: back' :
-            '↑↓: select option • Enter: confirm • Esc: back to instances'
+          (() => {
+            const instanceKeys = Array.from(selectedInstances);
+            const hasAnyDatabases = instanceKeys.some(key => (availableDatabases[key] || []).length > 0);
+            return hasAnyDatabases && databaseSelection === 'specific' ?
+              '↑↓: navigate • Space: toggle • Enter: confirm • Esc: back' :
+              '↑↓: select option • Enter: confirm • Esc: back to instances';
+          })()
         )
       ),
       
@@ -786,15 +980,41 @@ const EnhancedInstanceSelector = ({
         React.createElement(
           Text,
           { color: 'green' },
-          databaseSelection === 'all' ? 
-            '✓ All databases will be migrated. Press Enter to continue.' :
-            availableDatabases.length > 0 ?
-              selectedDatabasesList.size > 0 ?
-                `✓ Selected ${selectedDatabasesList.size} database${selectedDatabasesList.size > 1 ? 's' : ''}: ${Array.from(selectedDatabasesList).join(', ')}. Press Enter to continue.` :
-                '⚠️ Please select at least one database' :
-              selectedDatabases.trim() ? 
-                `✓ Databases to migrate: ${selectedDatabases}. Press Enter to continue.` :
-                '⚠️ Please specify database names or select "all databases"'
+          (() => {
+            if (databaseSelection === 'all') {
+              return '✓ All databases will be migrated. Press Enter to continue.';
+            }
+            
+            const instanceKeys = Array.from(selectedInstances);
+            const hasAnyDatabases = instanceKeys.some(key => (availableDatabases[key] || []).length > 0);
+            
+            if (hasAnyDatabases) {
+              // Count total selected databases across all instances
+              let totalSelected = 0;
+              let summary = [];
+              
+              for (const instanceKey of instanceKeys) {
+                const selected = selectedDatabasesList[instanceKey];
+                if (selected && selected.size > 0) {
+                  totalSelected += selected.size;
+                  const instance = instances.find(inst => 
+                    `${inst.project}:${inst.instance}` === instanceKey
+                  );
+                  summary.push(`${instance?.label || instanceKey}: ${selected.size}`);
+                }
+              }
+              
+              if (totalSelected > 0) {
+                return `✓ Selected ${totalSelected} database${totalSelected > 1 ? 's' : ''} (${summary.join(', ')}). Press Enter to continue.`;
+              } else {
+                return '⚠️ Please select at least one database';
+              }
+            } else if (selectedDatabases.trim()) {
+              return `✓ Databases to migrate: ${selectedDatabases}. Press Enter to continue.`;
+            } else {
+              return '⚠️ Please specify database names or select "all databases"';
+            }
+          })()
         )
       )
     );
@@ -811,23 +1031,6 @@ const EnhancedInstanceSelector = ({
       `🔧 ${label} (${instances.length} found):`
     ),
 
-    // Version distribution
-    Object.keys(versionGroups).length > 1 && React.createElement(
-      Box,
-      { flexDirection: 'column', marginBottom: 1 },
-      React.createElement(
-        Text,
-        { color: colorPalettes.dust.secondary },
-        'PostgreSQL versions:'
-      ),
-      ...Object.entries(versionGroups).map(([version, insts]) =>
-        React.createElement(
-          Text,
-          { key: version, color: 'gray' },
-          `  • PG ${version}: ${insts.length} instance${insts.length > 1 ? 's' : ''}`
-        )
-      )
-    ),
 
     // Navigation hints
     React.createElement(

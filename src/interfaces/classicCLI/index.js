@@ -218,7 +218,7 @@ class ClassicCLI {
       .option('--config <file>', 'Configuration file')
       .option('--sources-file <file>', 'File with source instances (txt/json/csv)')
       .option('--mapping-file <file>', 'Migration mapping file (json)')
-      .option('--strategy <strategy>', 'Migration strategy (auto-detected if not specified: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, manual-mapping, custom)')
+      .option('--strategy <strategy>', 'Migration strategy (auto-detected if not specified: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, custom)')
       .option('--conflict-resolution <resolution>', 'Conflict resolution (fail, prefix, suffix, merge, rename-schema)')
       .option('--max-parallel <number>', 'Max parallel migrations', '3')
       .option('--stop-on-error', 'Stop batch on first error', false)

@@ -156,10 +156,14 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
                 React.createElement(
                   Text,
                   { color: 'cyan' },
-                  `→ ${src.project}:${src.instance}${src.databases?.length ? ` (${src.databases.length} DBs)` : ''}`
+                  `→ ${src.project}:${src.instance}${src.databases === 'all' ? ' (All DBs)' : src.databases?.length ? ` (${src.databases.length} DBs)` : ''}`
                 ),
                 // Show databases if available
-                src.databases?.length > 0 && React.createElement(
+                src.databases === 'all' ? React.createElement(
+                  Text,
+                  { color: colorPalettes.dust.tertiary, marginLeft: 2 },
+                  `  DBs: All databases`
+                ) : src.databases?.length > 0 && React.createElement(
                   Text,
                   { color: colorPalettes.dust.tertiary, marginLeft: 2 },
                   `  DBs: ${src.databases.slice(0, 3).join(', ')}${src.databases.length > 3 ? `, +${src.databases.length - 3} more` : ''}`
