@@ -5,7 +5,7 @@
 Thumbs.db
 tmp/
 temp/
-
+local_docs/
 
 .claude/
 .cursor/
@@ -101,3 +101,20 @@ coverage
 secret.json
 secret.txt
 local_docs/
+
+# Test artifacts
+test-*.js
+test-*.db
+test-*.db-wal
+*.db-wal
+instances.txt
+inventory.csv
+*.tgz
+
+# Local config
+CLAUDE.local.md
+
+# Temporary files
+file
+tmp.*
+temp.*
