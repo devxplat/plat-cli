@@ -19,7 +19,18 @@ yarn global add plat-cli
 plat-cli
 
 # Or use classic CLI for automation
-plat-cli gcp cloudsql migrate --source-project prod --source-instance db1 --target-project prod --target-instance db2
+plat-cli gcp cloudsql migrate \
+  --source-project my-project-prd-01 \
+  --source-instance db-instance-v2 \
+  --target-project my-project-prd-01 \
+  --target-instance db-instance \
+  --databases myapp_db \
+  --source-ip 34.95.123.45 \
+  --source-user postgres \
+  --source-password MySecurePass123 \
+  --target-ip 34.95.67.89 \
+  --target-user postgres \
+  --target-password MySecurePass123
 ```
 
 ## ✨ Features
@@ -29,6 +40,7 @@ plat-cli gcp cloudsql migrate --source-project prod --source-instance db1 --targ
 - **📦 Batch Operations** - Migrate multiple databases in parallel (N:1, N:N)
 - **🔄 Smart Strategies** - Auto-detect optimal migration patterns
 - **📊 Real-time Progress** - Live progress tracking with ETA
+- **🔐 Users & Roles Migration** - Optional migration of database users and permissions
 - **💾 Local Cache** - SQLite-powered persistent cache for better performance of configurations and inputs
 - **🔁 Auto Retry** - Intelligent retry with exponential backoff
 - **🎨 Modern UX** - Beautiful TUI with React and @inkjs/ui components
@@ -100,6 +112,20 @@ plat-cli gcp cloudsql migrate \
 ### CloudSQL Migration
 
 ```bash
+# Complete migration example with all connection details
+plat-cli gcp cloudsql migrate \
+  --source-project my-project-prd-01 \
+  --source-instance db-instance-v2 \
+  --target-project my-project-prd-01 \
+  --target-instance db-instance \
+  --databases myapp_db,analytics_db \
+  --source-ip 34.95.123.45 \
+  --source-user postgres \
+  --source-password MySecurePass123 \
+  --target-ip 34.95.67.89 \
+  --target-user postgres \
+  --target-password MySecurePass123
+
 # Test connection
 plat-cli gcp cloudsql test-connection \
   --project my-project \
@@ -118,6 +144,17 @@ plat-cli gcp cloudsql migrate \
   --target-instance db-v2 \
   --include-all \
   --dry-run
+
+# Migrate with users and roles (optional)
+plat-cli gcp cloudsql migrate \
+  --source-project prod \
+  --source-instance db-v1 \
+  --target-project prod \
+  --target-instance db-v2 \
+  --include-all \
+  --include-users-roles \
+  --password-strategy default \
+  --default-password 'SecurePass123!'
 ```
 
 ### Migration Strategies
@@ -182,10 +219,17 @@ Use JSON for complex configurations:
   "options": {
     "strategy": "simple",
     "retryAttempts": 3,
-    "jobs": 2
+    "jobs": 2,
+    "includeUsersRoles": false,
+    "passwordStrategy": {
+      "type": "default",
+      "defaultPassword": "ChangeMeNow123!"
+    }
   }
 }
 ```
+
+**Security Note:** When migrating users, passwords cannot be extracted from the source. You must set new passwords using one of the strategies: `same` (use migration user password), `default` (set a default password), or `individual` (set per-user passwords).
 
 ```bash
 plat-cli gcp cloudsql migrate --config migration.json

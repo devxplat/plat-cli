@@ -73,7 +73,7 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     
     return React.createElement(
       Box,
-      { marginTop: 1, marginBottom: 1 },
+      { marginTop: 0, marginBottom: 0 },
       React.createElement(CustomAlert, {
         variant: isDryRun ? 'info' : 'warning',
         title: message
@@ -92,7 +92,7 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     
     return React.createElement(
       Box,
-      { flexDirection: 'column', gap: 1 },
+      { flexDirection: 'column', gap: 0 },
       React.createElement(
         Text,
         { color: colorPalettes.dust.primary, bold: true },
@@ -100,7 +100,7 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
       ),
       React.createElement(
         UnorderedList,
-        { marginTop: 1 },
+        { marginTop: 0 },
         React.createElement(
           UnorderedList.Item,
           null,
@@ -286,7 +286,7 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
   // Show single migration configuration summary (ready or success state)
   return React.createElement(
     Box,
-    { flexDirection: 'column', gap: 1 },
+    { flexDirection: 'column', gap: 0 },
     React.createElement(
       Text,
       { color: colorPalettes.dust.primary, bold: true },
@@ -294,7 +294,7 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
     ),
     React.createElement(
       UnorderedList,
-      { marginTop: 1 },
+      { marginTop: 0 },
       React.createElement(
         UnorderedList.Item,
         null,

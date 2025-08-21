@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { StatusMessage, Badge } from '@inkjs/ui';
 import { colorPalettes } from '../theme/custom-theme.js';
 import MigrationSummary from '../../common/components/MigrationSummary.js';
@@ -26,27 +26,40 @@ const _formatDuration = (milliseconds) => {
 /**
  * Simple ExecutionResults component using React.createElement
  */
-const ExecutionResults = ({ result, config, error, onContinue }) => {
-  React.useEffect(() => {
-    // Skip stdin listener in test environment
-    if (process.env.NODE_ENV === 'test') {
+const ExecutionResults = ({ result, config, error, onContinue, onRetry, onViewLogs }) => {
+  const [isActive, setIsActive] = React.useState(true);
+  
+  // Use Ink's useInput hook for better key handling
+  useInput((input, key) => {
+    // Skip in test environment or if not active
+    if (process.env.NODE_ENV === 'test' || !isActive) {
       return;
     }
 
-    const handleKeyPress = () => {
+    // Handle different key presses
+    if (key.return || input === '\r' || input === '\n') {
+      // Enter key - return to menu
       if (onContinue) {
+        setIsActive(false); // Disable input before transitioning
         onContinue();
       }
-    };
-
-    // Listen for any key press
-    const handleInput = () => handleKeyPress();
-    process.stdin.on('data', handleInput);
-
-    return () => {
-      process.stdin.off('data', handleInput);
-    };
-  }, [onContinue]);
+    } else if (input?.toLowerCase() === 'r') {
+      // R - run another migration
+      if (onRetry) {
+        onRetry();
+      } else if (onContinue) {
+        onContinue(); // Fallback to menu if no retry handler
+      }
+    } else if (input?.toLowerCase() === 'v') {
+      // V - view detailed logs
+      if (onViewLogs) {
+        onViewLogs();
+      }
+    } else if (key.escape) {
+      // Escape - exit application
+      process.exit(0);
+    }
+  });
 
   if (error) {
     return React.createElement(
@@ -58,9 +71,18 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
         `❌ Operation failed: ${error.message}`
       ),
       React.createElement(
-        Text,
-        { color: 'gray' },
-        'Press any key to continue...'
+        Box,
+        { flexDirection: 'column', marginTop: 1, gap: 0 },
+        React.createElement(
+          Text,
+          { color: '#7e9400' },
+          '[Enter] Try again'
+        ),
+        React.createElement(
+          Text,
+          { color: colorPalettes.dust.tertiary },
+          '[Esc] Exit application'
+        )
       )
     );
   }
@@ -79,7 +101,7 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
 
   // Check if it's a batch/interactive migration with detailed results
   const isBatchResult = result?.batchResults || config?.isBatch;
-  const isInteractive = config?.metadata?.mode === 'interactive';
+  const isInteractive = config?.metadata?.mode === 'interactive' || config?.migrationMode === 'interactive';
   
   // Format result for MigrationSummary component
   if (isBatchResult || isInteractive) {
@@ -110,9 +132,12 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
       });
     }
     
+    // Handle both batch and interactive mode results
     const formattedResult = {
-      operations,
-      totalDuration: batchResults?.report?.summary?.duration || result?.duration || result.totalDuration
+      operations: operations.length > 0 ? operations : (result?.operations || []),
+      totalDuration: batchResults?.report?.summary?.duration || result?.duration || result?.totalDuration,
+      processedDatabases: result?.processedDatabases || batchResults?.processedDatabases,
+      totalSize: result?.totalSize || batchResults?.totalSize
     };
     
     return React.createElement(
@@ -123,10 +148,36 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
         config: config,
         isBatch: true
       }),
+      // Navigation options
       React.createElement(
-        Text, 
-        { color: colorPalettes.dust.tertiary, marginTop: 1 }, 
-        'Press any key to continue...'
+        Box,
+        { flexDirection: 'column', marginTop: 2, gap: 0 },
+        React.createElement(
+          Text,
+          { bold: true, color: colorPalettes.dust.primary },
+          'What would you like to do next?'
+        ),
+        React.createElement(Box, { height: 1 }),
+        React.createElement(
+          Text,
+          { color: '#7e9400' },
+          '[Enter] Return to main menu'
+        ),
+        React.createElement(
+          Text,
+          { color: colorPalettes.genericGradient[1] },
+          '[R] Run another migration'
+        ),
+        onViewLogs && React.createElement(
+          Text,
+          { color: colorPalettes.genericGradient[3] },
+          '[V] View detailed logs'
+        ),
+        React.createElement(
+          Text,
+          { color: colorPalettes.dust.tertiary },
+          '[Esc] Exit application'
+        )
       )
     );
   }
@@ -140,10 +191,36 @@ const ExecutionResults = ({ result, config, error, onContinue }) => {
       config: config,
       isBatch: false
     }),
+    // Navigation options for single migration
     React.createElement(
-      Text,
-      { color: colorPalettes.dust.tertiary, marginTop: 1 },
-      'Press any key to continue...'
+      Box,
+      { flexDirection: 'column', marginTop: 2, gap: 0 },
+      React.createElement(
+        Text,
+        { bold: true, color: colorPalettes.dust.primary },
+        'What would you like to do next?'
+      ),
+      React.createElement(Box, { height: 1 }),
+      React.createElement(
+        Text,
+        { color: '#7e9400' },
+        '[Enter] Return to main menu'
+      ),
+      React.createElement(
+        Text,
+        { color: colorPalettes.genericGradient[1] },
+        '[R] Run another migration'
+      ),
+      onViewLogs && React.createElement(
+        Text,
+        { color: colorPalettes.genericGradient[3] },
+        '[V] View detailed logs'
+      ),
+      React.createElement(
+        Text,
+        { color: colorPalettes.dust.tertiary },
+        '[Esc] Exit application'
+      )
     )
   );
 };

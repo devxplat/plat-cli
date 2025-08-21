@@ -133,7 +133,7 @@ class MigrationMapping {
             tasks.push({
               source,
               target: this.targets[0],
-              databases: 'all',
+              databases: source.databases || 'all',
               conflictResolution: this.conflictResolution
             });
           });
@@ -153,7 +153,7 @@ class MigrationMapping {
                   password: target.password || source.password,
                   user: target.user || 'postgres'
                 },
-                databases: 'all'
+                databases: source.databases || 'all'
               });
             }
           });

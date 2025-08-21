@@ -45,7 +45,7 @@ const SimpleSelect = ({
     }
 
     if (key.return) {
-      if (options[selectedIndex]) {
+      if (options.length > 0 && options[selectedIndex]) {
         setIsSubmitted(true);
         onSubmit(options[selectedIndex].value);
       }

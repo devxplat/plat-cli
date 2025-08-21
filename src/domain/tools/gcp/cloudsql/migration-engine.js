@@ -1,4 +1,5 @@
 // Migration Engine - handles database migration operations
+import UsersRolesExtractor from '../../../../infrastructure/cloud/gcp-users-roles-extractor.js';
 
 class ModernMigrationEngine {
   constructor(logger, connectionManager, databaseOps, progressTracker) {
@@ -6,6 +7,7 @@ class ModernMigrationEngine {
     this.connectionManager = connectionManager;
     this.databaseOps = databaseOps;
     this.progressTracker = progressTracker;
+    this.usersRolesExtractor = new UsersRolesExtractor(connectionManager, logger);
 
     this.state = {
       id: null,
@@ -68,6 +70,59 @@ class ModernMigrationEngine {
         this.progressTracker.status('All checks passed', 'success');
       });
 
+      // Phase 3.5: Users & Roles Migration (Optional)
+      let usersRolesScripts = null;
+      let databasePermissions = null;
+      if (config.options?.includeUsersRoles) {
+        await this._executePhase('Users & Roles Setup', async () => {
+          // Initialize extractor
+          await this.usersRolesExtractor.init();
+          
+          // Extract users and roles from source
+          // Check if specific users are selected
+          const filterUsers = config.options?.userSelectionMode === 'specific' && config.options?.selectedUsers?.all
+            ? config.options.selectedUsers.all
+            : null;
+            
+          const extractedData = await this.usersRolesExtractor.extractUsersAndRoles(
+            config.source.project,
+            config.source.instance,
+            config.source,
+            filterUsers
+          );
+          
+          // Extract database permissions for later use
+          const dbNames = databases.map(db => db.name);
+          databasePermissions = await this.usersRolesExtractor.extractDatabasePermissions(
+            config.source.project,
+            config.source.instance,
+            dbNames,
+            config.source
+          );
+          
+          // Generate creation script
+          const createScript = await this.usersRolesExtractor.generateCreateScript(
+            extractedData,
+            config.options.passwordStrategy || { type: 'default', defaultPassword: 'ChangeMeNow123!' }
+          );
+          
+          // Apply users and roles to target
+          const result = await this.usersRolesExtractor.applyUsersAndRoles(
+            config.target.project,
+            config.target.instance,
+            createScript,
+            config.target
+          );
+          
+          this.progressTracker.status(
+            `Users/Roles migrated: ${result.successCount} successful, ${result.errorCount} failed`,
+            result.errorCount > 0 ? 'warning' : 'success'
+          );
+          
+          usersRolesScripts = { createScript };
+        });
+      }
+
       // Phase 4: Export phase
       let backups;
       await this._executePhase('Export', async () => {
@@ -84,6 +139,27 @@ class ModernMigrationEngine {
         this.progressTracker.status('All databases imported', 'success');
       });
 
+      // Phase 5.5: Apply Permissions (Optional)
+      if (config.options?.includeUsersRoles && databasePermissions) {
+        await this._executePhase('Apply Permissions', async () => {
+          const dbNames = databases.map(db => db.name);
+          const permissionsScript = await this.usersRolesExtractor.generatePermissionsScript(
+            databasePermissions,
+            dbNames
+          );
+          
+          // Apply permissions script to target
+          await this.databaseOps.applyPermissionsScript(
+            config.target.project,
+            config.target.instance,
+            permissionsScript,
+            config.target
+          );
+          
+          this.progressTracker.status('Permissions restored', 'success');
+        });
+      }
+
       // Phase 6: Post-migration validation
       await this._executePhase('Post-migration Validation', async () => {
         await this._postMigrationValidation(config, databases);
@@ -93,6 +169,12 @@ class ModernMigrationEngine {
       // Phase 7: Cleanup
       await this._executePhase('Cleanup', async () => {
         await this._cleanup();
+        
+        // Cleanup users/roles temp files if used
+        if (config.options?.includeUsersRoles) {
+          await this.usersRolesExtractor.cleanup();
+        }
+        
         this.progressTracker.status('Cleanup completed', 'success');
       });
 
@@ -107,7 +189,12 @@ class ModernMigrationEngine {
         duration,
         metrics: this.state.metrics,
         processedDatabases: this.state.processedDatabases.length,
-        databaseDetails: this.state.databaseDetails || []
+        databases: this.state.processedDatabases,
+        databaseDetails: this.state.databaseDetails || [],
+        sourceInstance: `${config.source.project}/${config.source.instance}`,
+        targetInstance: `${config.target.project}/${config.target.instance}`,
+        successful: this.state.processedDatabases || [],
+        failed: []
       };
     } catch (error) {
       this.state.status = 'failed';

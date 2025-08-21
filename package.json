@@ -141,5 +141,13 @@
     "tests": true,
     "preview": true,
     "branch": "main"
+  },
+  "ava": {
+    "files": [
+      "src/**/*.test.js"
+    ],
+    "timeout": "10s",
+    "concurrency": 1,
+    "failWithoutAssertions": false
   }
 }

@@ -18,6 +18,7 @@ import { mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import os from 'os';
+import crypto from 'crypto';
 
 export class PersistentCache {
   constructor() {
@@ -94,6 +95,20 @@ export class PersistentCache {
         project_id TEXT UNIQUE NOT NULL,
         last_used INTEGER NOT NULL,
         use_count INTEGER DEFAULT 1
+      )`,
+
+      // Instance credentials table (encrypted)
+      `CREATE TABLE IF NOT EXISTS instance_credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project TEXT NOT NULL,
+        instance TEXT NOT NULL,
+        user TEXT NOT NULL,
+        password TEXT,
+        save_enabled INTEGER DEFAULT 1,
+        last_used INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(project, instance)
       )`,
 
       // Session history table (for future features)
@@ -414,6 +429,203 @@ export class PersistentCache {
     } catch (error) {
       this.debugLog(`Failed to get cache stats: ${error.message}`);
       return { entryCount: 0, totalSize: 0, operations: {} };
+    }
+  }
+
+  /**
+   * Generate encryption key based on machine ID and user
+   */
+  getEncryptionKey() {
+    const machineId = os.hostname() + os.userInfo().username;
+    return crypto.createHash('sha256').update(machineId).digest();
+  }
+
+  /**
+   * Encrypt text using AES-256-GCM
+   */
+  encrypt(text) {
+    if (!text) return null;
+    
+    const key = this.getEncryptionKey();
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
+    // Combine iv, authTag, and encrypted data
+    return iv.toString('hex') + ':' + authTag.toString('hex') + ':' + encrypted;
+  }
+
+  /**
+   * Decrypt text using AES-256-GCM
+   */
+  decrypt(encryptedData) {
+    if (!encryptedData) return null;
+    
+    try {
+      const parts = encryptedData.split(':');
+      if (parts.length !== 3) return null;
+      
+      const key = this.getEncryptionKey();
+      const iv = Buffer.from(parts[0], 'hex');
+      const authTag = Buffer.from(parts[1], 'hex');
+      const encrypted = parts[2];
+      
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(authTag);
+      
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      
+      return decrypted;
+    } catch (error) {
+      this.debugLog(`Failed to decrypt: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Save instance credentials (encrypted)
+   */
+  async saveCredentials(project, instance, user, password, saveEnabled = true) {
+    await this.init();
+    
+    try {
+      const encryptedPassword = password ? this.encrypt(password) : null;
+      const now = Date.now();
+      
+      const stmt = this.db.prepare(`
+        INSERT INTO instance_credentials (project, instance, user, password, save_enabled, last_used, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project, instance) 
+        DO UPDATE SET 
+          user = excluded.user,
+          password = excluded.password,
+          save_enabled = excluded.save_enabled,
+          last_used = excluded.last_used,
+          updated_at = excluded.updated_at
+      `);
+      
+      stmt.run(project, instance, user, encryptedPassword, saveEnabled ? 1 : 0, now, now, now);
+      
+      this.debugLog(`Saved credentials for ${project}:${instance}`);
+      return true;
+    } catch (error) {
+      this.debugLog(`Failed to save credentials: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Get instance credentials (decrypted)
+   */
+  async getCredentials(project, instance) {
+    await this.init();
+    
+    try {
+      const stmt = this.db.prepare(`
+        SELECT user, password, save_enabled 
+        FROM instance_credentials 
+        WHERE project = ? AND instance = ?
+      `);
+      
+      const row = stmt.get(project, instance);
+      
+      if (!row) {
+        return null;
+      }
+      
+      // Update last_used timestamp
+      const updateStmt = this.db.prepare(`
+        UPDATE instance_credentials 
+        SET last_used = ? 
+        WHERE project = ? AND instance = ?
+      `);
+      updateStmt.run(Date.now(), project, instance);
+      
+      return {
+        user: row.user,
+        password: row.password ? this.decrypt(row.password) : null,
+        saveEnabled: row.save_enabled === 1
+      };
+    } catch (error) {
+      this.debugLog(`Failed to get credentials: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Clear specific instance credentials
+   */
+  async clearCredentials(project, instance) {
+    await this.init();
+    
+    try {
+      const stmt = this.db.prepare(`
+        DELETE FROM instance_credentials 
+        WHERE project = ? AND instance = ?
+      `);
+      
+      const result = stmt.run(project, instance);
+      
+      if (result.changes > 0) {
+        this.debugLog(`Cleared credentials for ${project}:${instance}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      this.debugLog(`Failed to clear credentials: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Clear all saved credentials
+   */
+  async clearAllCredentials() {
+    await this.init();
+    
+    try {
+      const stmt = this.db.prepare('DELETE FROM instance_credentials');
+      const result = stmt.run();
+      
+      this.debugLog(`Cleared ${result.changes} saved credentials`);
+      return result.changes;
+    } catch (error) {
+      this.debugLog(`Failed to clear all credentials: ${error.message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Get all saved credentials (for listing purposes, passwords not included)
+   */
+  async listSavedCredentials() {
+    await this.init();
+    
+    try {
+      const stmt = this.db.prepare(`
+        SELECT project, instance, user, save_enabled, last_used 
+        FROM instance_credentials 
+        ORDER BY last_used DESC
+      `);
+      
+      const rows = stmt.all();
+      
+      return rows.map(row => ({
+        project: row.project,
+        instance: row.instance,
+        user: row.user,
+        saveEnabled: row.save_enabled === 1,
+        lastUsed: new Date(row.last_used)
+      }));
+    } catch (error) {
+      this.debugLog(`Failed to list credentials: ${error.message}`);
+      return [];
     }
   }
 

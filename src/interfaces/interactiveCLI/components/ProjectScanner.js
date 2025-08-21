@@ -9,6 +9,7 @@ import CustomMultiSelect from './CustomMultiSelect.js';
 import EnhancedInstanceSelector from './EnhancedInstanceSelector.js';
 import projectHistory from '../../../infrastructure/config/project-history-manager.js';
 import gcpProjectFetcher from '../../../infrastructure/cloud/gcp-project-fetcher.js';
+import { PersistentCache } from '../../../infrastructure/cache/persistent-cache.js';
 
 /**
  * ProjectScanner Component
@@ -32,6 +33,7 @@ const ProjectScanner = ({
   const [scanCache, setScanCache] = useState({}); // Cache scan results
   const [suggestions, setSuggestions] = useState([]); // Autocomplete suggestions
   const [projectCount, setProjectCount] = useState(0); // Number of projects found
+  const [cache] = useState(() => new PersistentCache()); // Cache for credentials
   const [loadingMessage, setLoadingMessage] = useState(
     'Loading available GCP projects...'
   ); // Dynamic loading message
@@ -500,7 +502,8 @@ const ProjectScanner = ({
             // Pass initial state if we have it
             initialSelections: initialData?.initialSelections || [],
             initialCredentials: initialData?.initialCredentials || {},
-            initialCredentialsMode: initialData?.initialCredentialsMode || 'individual'
+            initialCredentialsMode: initialData?.initialCredentialsMode || 'individual',
+            cache // Pass the cache instance for credential management
           });
         }
 

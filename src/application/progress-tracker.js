@@ -1,9 +1,40 @@
-import React from 'react';
-import { render, Box, Text, Static } from 'ink';
-import { StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
+import React, { useState } from 'react';
+import { render, Box, Text, Static, useInput } from 'ink';
+import { StatusMessage, ProgressBar, ThemeProvider, Select } from '@inkjs/ui';
 import customTheme from '../interfaces/interactiveCLI/theme/custom-theme.js';
 import { ShimmerSpinner } from '../interfaces/interactiveCLI/components/CustomSpinner.js';
 import CustomProgressBar from '../interfaces/interactiveCLI/components/CustomProgressBar.js';
+import TodoList from '../interfaces/interactiveCLI/components/TodoList.js';
+
+/**
+ * Component for selecting next actions after migration completes
+ */
+const NextActionsSelector = ({ onAction }) => {
+  const options = [
+    { label: '↩️  Return to Main Menu', value: 'menu' },
+    { label: '🔄 Run Another Migration', value: 'retry' },
+    { label: '📋 View Detailed Logs', value: 'logs' },
+    { label: '🚪 Exit CLI', value: 'exit' }
+  ];
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginTop: 2 },
+    React.createElement(
+      Text,
+      { color: 'cyan' },
+      'What would you like to do next?'
+    ),
+    React.createElement(
+      Box,
+      { marginTop: 1 },
+      React.createElement(Select, {
+        options,
+        onChange: (value) => onAction(value)
+      })
+    )
+  );
+};
 
 /**
  * Modern Progress Tracker using Ink UI components
@@ -24,6 +55,10 @@ class ModernProgressTracker {
     this.elapsedSeconds = 0;
     this.timerInterval = null;
     this._lastUpdateTime = null;
+    
+    // TODO list tracking
+    this.todoTasks = [];
+    this.completedTasks = [];
 
     // Detailed phase tracking
     this.detailedPhases = ['Export', 'Import'];
@@ -85,6 +120,17 @@ class ModernProgressTracker {
     this.isActive = true;
     this.statusMessages = [];
     this.elapsedSeconds = 0;
+    
+    // Initialize TODO tasks based on phases
+    this.todoTasks = phases.map((phase, index) => ({
+      id: `phase-${index}`,
+      name: phase,
+      label: phase,
+      status: 'pending',
+      startedAt: null,
+      completedAt: null
+    }));
+    this.completedTasks = [];
 
     // Start real-time timer
     this.timerInterval = setInterval(() => {
@@ -111,6 +157,21 @@ class ModernProgressTracker {
       status: null,
       isDetailed: this.detailedPhases.includes(phaseName)
     };
+    
+    // Update TODO task status
+    const taskIndex = this.todoTasks.findIndex(t => t.name === phaseName);
+    if (taskIndex !== -1) {
+      this.todoTasks[taskIndex].status = 'in_progress';
+      this.todoTasks[taskIndex].startedAt = Date.now();
+      
+      // Mark previous tasks as completed if they were still pending
+      for (let i = 0; i < taskIndex; i++) {
+        if (this.todoTasks[i].status === 'pending') {
+          this.todoTasks[i].status = 'completed';
+          this.todoTasks[i].completedAt = Date.now();
+        }
+      }
+    }
 
     // Reset phase details for detailed phases
     if (this.currentPhase.isDetailed) {
@@ -185,6 +246,14 @@ class ModernProgressTracker {
     if (!this.currentPhase) return;
 
     const elapsed = (Date.now() - this.currentPhase.startTime) / 1000;
+    
+    // Update TODO task status
+    const taskIndex = this.todoTasks.findIndex(t => t.name === this.currentPhase.name);
+    if (taskIndex !== -1) {
+      this.todoTasks[taskIndex].status = 'completed';
+      this.todoTasks[taskIndex].completedAt = Date.now();
+      this.completedTasks.push(this.todoTasks[taskIndex]);
+    }
 
     // Update stats
     this.stats.phases[this.currentPhase.name].endTime = Date.now();
@@ -257,26 +326,54 @@ class ModernProgressTracker {
       this.timerInterval = null;
     }
 
+    // Mark all remaining tasks as completed FIRST
+    this.todoTasks.forEach(task => {
+      if (task.status === 'pending' || task.status === 'in_progress') {
+        task.status = 'completed';
+        task.completedAt = Date.now();
+      }
+    });
+
     // Update state for completion
     this.isComplete = true;
     this.completionResults = {
       ...results,
       duration: this._formatTime(totalDuration),
-      totalSize: this._formatBytes(this.stats.processedSizeBytes)
+      durationSeconds: totalDuration,
+      totalSize: this._formatBytes(this.stats.processedSizeBytes),
+      processedDatabases: results?.processedDatabases || this.stats.processedItems,
+      successful: results?.successful || [],
+      failed: results?.failed || [],
+      sourceInstance: results?.sourceInstance,
+      targetInstance: results?.targetInstance,
+      databases: results?.databases || [],
+      startTime: new Date(this.startTime).toLocaleTimeString(),
+      endTime: new Date().toLocaleTimeString()
     };
 
-    // Update the Ink display with completion
+
+    // IMPORTANT: Update the Ink display AFTER all state changes
+    // Try multiple times if needed
+    const tryUpdate = () => {
+      if (this._updateProgressData) {
+        this._updateProgressData();
+        return true;
+      }
+      return false;
+    };
+
+    if (!tryUpdate()) {
+      // If update function doesn't exist yet, wait a bit and try again
+      setTimeout(() => {
+        tryUpdate();
+      }, 100);
+    }
+
+    // Also call the original update method
     this._updateInkRender();
 
-    // Keep the completion message visible for a moment before unmounting
-    // This allows users to see the completion status
-    setTimeout(() => {
-      if (this.inkInstance) {
-        this.inkInstance.unmount();
-        this.inkInstance = null;
-      }
-    }, 2000); // Show completion for 2 seconds
-
+    // Do NOT automatically unmount - let the InkApp control the lifecycle
+    // The InkApp will handle when to unmount based on user interaction
     this.isActive = false;
   }
 
@@ -485,6 +582,28 @@ class ModernProgressTracker {
     }
   }
 
+  /**
+   * Cleanup the progress tracker (called by InkApp when needed)
+   */
+  cleanup() {
+    // Clear any timers
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+
+    // Stop predictive progress
+    this.stopPredictiveProgress();
+
+    // Unmount Ink instance if it exists
+    if (this.inkInstance) {
+      this.inkInstance.unmount();
+      this.inkInstance = null;
+    }
+
+    this.isActive = false;
+  }
+
   // Private methods
 
   _startInkRender() {
@@ -509,8 +628,11 @@ class ModernProgressTracker {
         currentPhase: self.currentPhase,
         elapsedSeconds: self.elapsedSeconds,
         statusMessages: self.statusMessages,
-        completionResults: self.completionResults
+        completionResults: self.completionResults,
+        todoTasks: self.todoTasks
       });
+
+      // No longer need to handle "any key" - the selector handles actions
 
       React.useEffect(() => {
         // Store the update function for external updates
@@ -521,7 +643,8 @@ class ModernProgressTracker {
             currentPhase: self.currentPhase,
             elapsedSeconds: self.elapsedSeconds,
             statusMessages: self.statusMessages,
-            completionResults: self.completionResults
+            completionResults: self.completionResults,
+            todoTasks: self.todoTasks
           });
         };
       }, []);
@@ -558,20 +681,37 @@ class ModernProgressTracker {
           )
         ),
         
+        // Show TODO list above main progress
+        progressData.todoTasks && progressData.todoTasks.length > 0 && React.createElement(
+          Box,
+          { marginBottom: 1, marginLeft: 2 },
+          React.createElement(TodoList, {
+            tasks: progressData.todoTasks,
+            title: null,
+            showTimeline: true,
+            maxVisible: 8
+          })
+        ),
+        
         // Main progress display
         progressData.isComplete ? 
           // Completion state
           React.createElement(
             Box,
             { flexDirection: 'column', gap: 1 },
-            // Show completion message in spinner line
+            // Show completion message with check mark
             React.createElement(
               Box,
-              { gap: 2 },
+              { gap: 2, marginBottom: 1 },
               React.createElement(
                 Text,
-                { color: '#FF00A7', bold: true },
-                '✨ Migration Complete!'
+                { color: '#7e9400', bold: true },
+                '✓'
+              ),
+              React.createElement(
+                Text,
+                { color: '#7e9400', bold: true },
+                'Migration completed successfully'
               ),
               React.createElement(
                 Text,
@@ -579,26 +719,93 @@ class ModernProgressTracker {
                 `(${self._formatTime(progressData.elapsedSeconds)})`
               )
             ),
-            // Results summary
-            progressData.completionResults && React.createElement(
+            // Migration Summary
+            React.createElement(
               Box,
-              { flexDirection: 'column', marginTop: 1 },
-              progressData.completionResults.processedDatabases && React.createElement(
+              { flexDirection: 'column', marginTop: 2, borderStyle: 'round', borderColor: '#7e9400', padding: 1 },
+              React.createElement(
                 Text,
-                null,
-                `Databases migrated: ${progressData.completionResults.processedDatabases}`
+                { bold: true, color: '#7e9400' },
+                '📊 Migration Summary'
               ),
-              progressData.completionResults.totalSize && React.createElement(
-                Text,
-                null,
-                `Total size: ${progressData.completionResults.totalSize}`
-              ),
-              progressData.completionResults.duration && React.createElement(
-                Text,
-                null,
-                `Total duration: ${progressData.completionResults.duration}`
+              React.createElement(Box, { marginBottom: 1 }),
+              // Results summary
+              progressData.completionResults && React.createElement(
+                Box,
+                { flexDirection: 'column', gap: 1 },
+                // Instance information
+                progressData.completionResults.sourceInstance && React.createElement(
+                  Text,
+                  { color: 'cyan' },
+                  `📦 Source: ${progressData.completionResults.sourceInstance}`
+                ),
+                progressData.completionResults.targetInstance && React.createElement(
+                  Text,
+                  { color: 'cyan' },
+                  `📦 Target: ${progressData.completionResults.targetInstance}`
+                ),
+                React.createElement(Box, { marginTop: 1 }),
+                // Database details
+                progressData.completionResults.databases && progressData.completionResults.databases.length > 0 && React.createElement(
+                  Box,
+                  { flexDirection: 'column' },
+                  React.createElement(
+                    Text,
+                    { color: 'white' },
+                    `✓ Databases migrated (${progressData.completionResults.processedDatabases || progressData.completionResults.databases.length}):`
+                  ),
+                  ...progressData.completionResults.databases.slice(0, 5).map(db => 
+                    React.createElement(
+                      Text,
+                      { key: db, color: 'gray', marginLeft: 2 },
+                      `• ${db}`
+                    )
+                  ),
+                  progressData.completionResults.databases.length > 5 && React.createElement(
+                    Text,
+                    { color: 'gray', marginLeft: 2 },
+                    `• ... and ${progressData.completionResults.databases.length - 5} more`
+                  )
+                ),
+                React.createElement(Box, { marginTop: 1 }),
+                // Size and timing
+                progressData.completionResults.totalSize && React.createElement(
+                  Text,
+                  null,
+                  `💾 Total size: ${progressData.completionResults.totalSize}`
+                ),
+                progressData.completionResults.duration && React.createElement(
+                  Text,
+                  null,
+                  `⏱️ Duration: ${progressData.completionResults.duration}`
+                ),
+                progressData.completionResults.startTime && React.createElement(
+                  Text,
+                  { color: 'gray' },
+                  `Started: ${progressData.completionResults.startTime} | Ended: ${progressData.completionResults.endTime}`
+                ),
+                React.createElement(Box, { marginTop: 1 }),
+                // Success/Failure counts
+                progressData.completionResults.successful && React.createElement(
+                  Text,
+                  { color: '#7e9400' },
+                  `✓ Successful: ${progressData.completionResults.successful.length || 0} operations`
+                ),
+                progressData.completionResults.failed && progressData.completionResults.failed.length > 0 && React.createElement(
+                  Text,
+                  { color: '#FF0000' },
+                  `✗ Failed: ${progressData.completionResults.failed.length} operations`
+                )
               )
-            )
+            ),
+            // Next actions selector
+            React.createElement(NextActionsSelector, {
+              onAction: (action) => {
+                if (self.onUserContinue) {
+                  self.onUserContinue(action);
+                }
+              }
+            })
           ) :
         progressData.error ?
           // Error state
@@ -610,30 +817,12 @@ class ModernProgressTracker {
           React.createElement(
             Box,
             { flexDirection: 'column', gap: 1 },
-            // Always show shimmer spinner with overall status for classic CLI
-            React.createElement(
-              Box,
-              { gap: 2 },
-              React.createElement(ShimmerSpinner, {
-                label: 'Migration in progress...',
-                isVisible: true,
-                status: 'running',
-                baseColor: '#F204F1',
-                glowSpeed: 100,
-                glowWidth: 3
-              }),
-              React.createElement(
-                Text,
-                { dimColor: true },
-                `(${self._formatTime(progressData.elapsedSeconds)})`
-              )
-            ),
             
-            // Show detailed progress for Export/Import phases
+            // Show detailed progress for Export/Import phases FIRST
             progressData.currentPhase && progressData.currentPhase.isDetailed && 
               React.createElement(
                 Box,
-                { flexDirection: 'column', gap: 1, marginTop: 1 },
+                { flexDirection: 'column', gap: 1 },
                 // Phase name
                 React.createElement(
                   Text,
@@ -663,17 +852,36 @@ class ModernProgressTracker {
                 )
               ),
             
-            // Show simple status for non-detailed phases
+            // Show simple status for non-detailed phases (BEFORE spinner)
             progressData.currentPhase && !progressData.currentPhase.isDetailed && progressData.currentPhase.status &&
               React.createElement(
                 Box,
-                { marginLeft: 4 },
+                { marginLeft: 4, marginBottom: 1 },
                 React.createElement(
                   Text,
                   { dimColor: true },
                   progressData.currentPhase.status
                 )
+              ),
+            
+            // Spinner at the very BOTTOM
+            React.createElement(
+              Box,
+              { gap: 2, marginTop: 2 },
+              React.createElement(ShimmerSpinner, {
+                label: 'Migration in progress...',
+                isVisible: true,
+                status: 'running',
+                baseColor: '#F204F1',
+                glowSpeed: 100,
+                glowWidth: 3
+              }),
+              React.createElement(
+                Text,
+                { dimColor: true },
+                `(${self._formatTime(progressData.elapsedSeconds)})`
               )
+            )
           )
       );
     };
@@ -689,11 +897,18 @@ class ModernProgressTracker {
 
   _updateInkRender() {
     if (this._updateProgressData) {
-      // Throttle updates to prevent excessive re-renders
-      if (!this._lastUpdateTime || Date.now() - this._lastUpdateTime > 100) {
+      // For completion state, always update immediately
+      if (this.isComplete) {
         this._updateProgressData();
         this._lastUpdateTime = Date.now();
+      } else {
+        // Throttle updates to prevent excessive re-renders during progress
+        if (!this._lastUpdateTime || Date.now() - this._lastUpdateTime > 100) {
+          this._updateProgressData();
+          this._lastUpdateTime = Date.now();
+        }
       }
+    } else {
     }
   }
 
@@ -814,18 +1029,16 @@ class ModernProgressTracker {
   }
 
   _formatTime(seconds) {
-    if (!seconds || seconds === Infinity || isNaN(seconds)) return '0s';
+    if (!seconds || seconds === Infinity || isNaN(seconds)) return '00:00';
 
-    if (seconds < 60) {
-      return `${seconds}s`;
-    } else if (seconds < 3600) {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${mins}m ${secs}s`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     } else {
-      const hours = Math.floor(seconds / 3600);
-      const mins = Math.floor((seconds % 3600) / 60);
-      return `${hours}h ${mins}m`;
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
   }
 

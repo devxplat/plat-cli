@@ -12,7 +12,7 @@ import InstanceSelector from './InstanceSelector.js';
 import SimpleSelect from './SimpleSelect.js';
 import ProjectScanner from './ProjectScanner.js';
 import MigrationPatternDetector from './MigrationPatternDetector.js';
-import SingleInstanceForm from './SingleInstanceForm.js';
+import UserRoleSelector from './UserRoleSelector.js';
 // import CredentialsConfiguration from './CredentialsConfiguration.js'; // Removed - now integrated in ProjectScanner
 import { getAvailableStrategies, getConflictResolutionOptions } from '../../../domain/strategies/migration-strategies.js';
 
@@ -37,8 +37,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'select',
           label: 'Migration Mode',
           options: [
-            { label: 'Single or Batch Guided with AutoDiscovery', value: 'interactive' },
-            { label: 'Single Instance Migration', value: 'single' },
+            { label: 'Guided Migration with AutoDiscovery', value: 'interactive' },
             { label: 'Batch Migration (Multiple Instances)', value: 'batch' }
           ],
           defaultValue: 'interactive'
@@ -98,13 +97,6 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           condition: (data) => data.migrationMode === 'batch'
         },
         {
-          key: 'singleInstanceConfig',
-          type: 'custom',
-          label: 'Instance Configuration',
-          component: 'SingleInstanceForm',
-          condition: (data) => data.migrationMode === 'single'
-        },
-        {
           key: 'targetProject',
           type: 'text',
           label: 'Target GCP Project',
@@ -146,23 +138,6 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           condition: (data) => data.migrationMode === 'batch' && data.batchStrategy === 'consolidate'
         },
         {
-          key: 'databaseSelection',
-          type: 'select',
-          label: 'Database Selection',
-          options: [
-            { label: 'All databases', value: 'all' },
-            { label: 'Specific databases', value: 'specific' }
-          ],
-          defaultValue: 'all'
-        },
-        {
-          key: 'databases',
-          type: 'text',
-          label: 'Database Names (comma-separated)',
-          placeholder: 'db1, db2, db3...',
-          condition: (data) => data.databaseSelection === 'specific'
-        },
-        {
           key: 'dataMode',
           type: 'select',
           label: 'Migration Data Mode',
@@ -172,6 +147,59 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
             { label: 'Data only', value: 'data' }
           ],
           defaultValue: 'full'
+        },
+        {
+          key: 'includeUsersRoles',
+          type: 'select',
+          label: 'Migrate Users and Roles',
+          options: [
+            { label: 'No - Migrate with clean restore', value: false },
+            { label: 'Yes - Migrate users, roles and permissions', value: true }
+          ],
+          defaultValue: false
+        },
+        {
+          key: 'userSelectionMode',
+          type: 'select', 
+          label: 'User Selection Mode',
+          options: [
+            { label: 'Migrate all users and roles (except system)', value: 'all' },
+            { label: 'Select specific users and roles to migrate', value: 'specific' }
+          ],
+          defaultValue: 'all',
+          condition: (data) => data.includeUsersRoles === true
+        },
+        {
+          key: 'selectedUsers',
+          type: 'custom',
+          label: 'Select Users and Roles to Migrate',
+          component: 'UserRoleSelector',
+          componentProps: { 
+            sourceProject: (data) => data.sourceProjectScan?.project || data.source?.project,
+            sourceInstance: (data) => data.sourceProjectScan?.instances?.[0] || data.source?.instance
+          },
+          condition: (data) => data.includeUsersRoles === true && data.userSelectionMode === 'specific'
+        },
+        {
+          key: 'passwordStrategy',
+          type: 'select',
+          label: 'Password Strategy for Migrated Users',
+          options: [
+            { label: 'Use same password as migration user', value: 'same' },
+            { label: 'Set default password for all users', value: 'default' },
+            { label: 'Prompt for individual passwords', value: 'individual' }
+          ],
+          defaultValue: 'default',
+          condition: (data) => data.includeUsersRoles === true
+        },
+        {
+          key: 'defaultPassword',
+          type: 'text',
+          label: 'Default Password for Migrated Users',
+          placeholder: 'Enter default password...',
+          required: true,
+          defaultValue: 'ChangeMeNow123!',
+          condition: (data) => data.includeUsersRoles === true && data.passwordStrategy === 'default'
         },
         {
           key: 'dryRun',
@@ -338,6 +366,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
 
   // Build final configuration
   const buildFinalConfig = async () => {
+    
     // Check if interactive migration
     if (formData.migrationMode === 'interactive' && formData.sourceProjectScan && formData.targetProjectScan) {
       const { default: MigrationMapping } = await import(
@@ -353,7 +382,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         sources: formData.sourceProjectScan.instances.map(inst => ({
           project: inst.project,
           instance: inst.instance,
-          databases: inst.databases,
+          databases: inst.databases || 'all', // Use databases from EnhancedInstanceSelector
           user: inst.credentials?.user || 'postgres',
           password: inst.credentials?.password,
           ip: inst.publicIp || inst.ip
@@ -367,13 +396,22 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         })),
         conflictResolution: formData.conflictResolution || 'fail',
         options: {
-          includeAll: true,
+          includeAll: formData.sourceProjectScan?.databaseSelection !== 'specific',
           schemaOnly: formData.dataMode === 'schema',
           dataOnly: formData.dataMode === 'data',
           dryRun: formData.dryRun || false,
           retryAttempts: 3,
           verbose: false,
-          maxParallel: pattern.pattern === 'N:N' ? 3 : 1
+          maxParallel: pattern.pattern === 'N:N' ? 3 : 1,
+          // Include users/roles options
+          includeUsersRoles: formData.includeUsersRoles || false,
+          userSelectionMode: formData.userSelectionMode || 'all',
+          selectedUsers: formData.selectedUsers || null,
+          passwordStrategy: formData.passwordStrategy ? {
+            type: formData.passwordStrategy,
+            defaultPassword: formData.defaultPassword,
+            password: formData.sourceProjectScan?.instances?.[0]?.credentials?.password
+          } : null
         },
         metadata: {
           pattern: pattern.pattern,
@@ -416,7 +454,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         }],
         conflictResolution: formData.conflictResolution || 'fail',
         options: {
-          includeAll: formData.databaseSelection === 'all',
+          includeAll: true, // For batch mode, handle at the mapping level
           schemaOnly: formData.dataMode === 'schema',
           dataOnly: formData.dataMode === 'data',
           dryRun: formData.dryRun || false,
@@ -436,34 +474,23 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
       };
     }
 
-    // Single migration configuration
-    const databases =
-      formData.databaseSelection === 'specific'
-        ? formData.databases
-            ?.split(',')
-            .map((db) => db.trim())
-            .filter(Boolean)
-        : null;
-
-    // Extract configuration from SingleInstanceForm
-    const singleConfig = formData.singleInstanceConfig || {};
-
+    // Batch migration configuration
     return new OperationConfig({
       source: {
-        project: singleConfig.source?.project || formData.sourceProject,
-        instance: singleConfig.source?.instance || formData.sourceInstance,
-        databases,
-        user: singleConfig.source?.credentials?.user || 'postgres',
-        password: singleConfig.source?.credentials?.password
+        project: formData.sourceProject,
+        instance: formData.sourceInstance,
+        databases: null, // Batch mode doesn't support database selection yet
+        user: 'postgres',
+        password: formData.sourcePassword
       },
       target: {
-        project: singleConfig.target?.project || formData.targetProject,
-        instance: singleConfig.target?.instance || formData.targetInstance,
-        user: singleConfig.target?.credentials?.user || 'postgres',
-        password: singleConfig.target?.credentials?.password
+        project: formData.targetProject,
+        instance: formData.targetInstance,
+        user: 'postgres',
+        password: formData.targetPassword
       },
       options: {
-        includeAll: formData.databaseSelection === 'all',
+        includeAll: true, // Batch mode migrates all databases
         schemaOnly: formData.dataMode === 'schema',
         dataOnly: formData.dataMode === 'data',
         dryRun: formData.dryRun || false,
@@ -585,21 +612,19 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
               onConfirm: handleNext
             });
             
-          case 'SingleInstanceForm':
-            return React.createElement(SingleInstanceForm, {
+          case 'UserRoleSelector':
+            // Resolve props if they are functions
+            const resolvedProps = {};
+            if (currentStep.componentProps) {
+              Object.keys(currentStep.componentProps).forEach(key => {
+                const prop = currentStep.componentProps[key];
+                resolvedProps[key] = typeof prop === 'function' ? prop(formData) : prop;
+              });
+            }
+            return React.createElement(UserRoleSelector, {
               ...componentProps,
-              initialData: formData[currentStep.key] || {}, // Pass saved form data
-              onComplete: (data) => {
-                handleInputChange(currentStep.key, data);
-                handleNext();
-              },
-              onCancel: (preservedData) => {
-                // Save current form state before going back
-                if (preservedData) {
-                  handleInputChange(currentStep.key, preservedData);
-                }
-                handleBack();
-              }
+              ...resolvedProps,
+              sourceConnectionInfo: formData.sourceProjectScan || formData.source
             });
             
           // CredentialsConfiguration removed - now integrated in ProjectScanner

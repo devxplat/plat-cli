@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { StatusMessage } from '@inkjs/ui';
 import { ShimmerSpinner } from './CustomSpinner.js';
+import TodoList from './TodoList.js';
 
 /**
  * Migration Progress Component
  * Displays real-time migration progress using Ink UI components
  */
-const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
+const MigrationProgress = ({ phase, status, isComplete, error, summary, tasks = [] }) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime] = useState(Date.now());
+  const [migrationTasks, setMigrationTasks] = useState([]);
 
   useEffect(() => {
     if (!isComplete && !error) {
@@ -20,6 +22,22 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
       return () => clearInterval(timer);
     }
   }, [isComplete, error, startTime]);
+  
+  useEffect(() => {
+    // Initialize or update migration tasks
+    if (tasks && tasks.length > 0) {
+      setMigrationTasks(tasks);
+    } else if (phase) {
+      // Create default tasks based on phase
+      const defaultTasks = [
+        { id: 'validate', label: 'Validation', status: 'completed' },
+        { id: 'export', label: 'Export databases', status: phase === 'Export' ? 'in_progress' : 'pending' },
+        { id: 'import', label: 'Import databases', status: phase === 'Import' ? 'in_progress' : (phase === 'Export' ? 'pending' : 'completed') },
+        { id: 'verify', label: 'Post-migration validation', status: isComplete ? 'completed' : 'pending' }
+      ];
+      setMigrationTasks(defaultTasks);
+    }
+  }, [phase, tasks, isComplete]);
 
   const formatTime = (seconds) => {
     if (seconds < 60) {
@@ -95,13 +113,25 @@ const MigrationProgress = ({ phase, status, isComplete, error, summary }) => {
     );
   }
 
-  // Show active progress with spinner
+  // Show active progress with TODO list and spinner
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 1 },
+    // Show TODO list timeline
+    migrationTasks.length > 0 && React.createElement(
+      Box,
+      { marginBottom: 1 },
+      React.createElement(TodoList, {
+        tasks: migrationTasks,
+        title: 'Migration Steps',
+        showTimeline: false,
+        maxVisible: 6
+      })
+    ),
+    // Show spinner at the bottom
     React.createElement(
       Box,
-      { gap: 2 },
+      { gap: 2, marginTop: 1 },
       React.createElement(ShimmerSpinner, {
         label: `${phase || 'Initializing'}...`,
         isVisible: true,

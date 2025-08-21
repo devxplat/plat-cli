@@ -8,6 +8,7 @@ import MainMenu from './components/MainMenu.js';
 import ConfigurationForm from './components/ConfigurationForm.js';
 import ConfigurationSummary from './components/ConfigurationSummary.js';
 import ExecutionResults from './components/ExecutionResults.js';
+import LogViewer from './components/LogViewer.js';
 
 /**
  * Main Ink application component for interactive CLI
@@ -55,6 +56,9 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           break;
         case 'results':
           handleBackToMenu();
+          break;
+        case 'logs':
+          setCurrentView('results'); // Go back to results from logs
           break;
         case 'connection-error':
           handleBackToConfiguration(); // Go back to first step of configuration keeping all data
@@ -181,19 +185,41 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           throw new Error('Batch migration returned no results');
         }
 
-        // Ensure progress tracker is properly cleaned up
-        if (coordinator.progressTracker) {
-          if (typeof coordinator.progressTracker.complete === 'function') {
-            coordinator.progressTracker.complete(result);
+        // The coordinator already calls progressTracker.complete()
+        // Set up callback for when user selects an action
+        coordinator.progressTracker.onUserContinue = (action) => {
+          // Clean up the progress tracker
+          if (coordinator.progressTracker && coordinator.progressTracker.cleanup) {
+            coordinator.progressTracker.cleanup();
           }
-        }
+          
+          // Handle the selected action
+          switch (action) {
+            case 'menu':
+              handleBackToMenu();
+              break;
+            case 'retry':
+              setExecutionResult(result);
+              handleRetryMigration();
+              break;
+            case 'logs':
+              // Store the full migration result for the log viewer
+              const fullResult = {
+                ...result,
+                // Ensure we have the completion results from the progress tracker
+                ...coordinator.progressTracker.completionResults
+              };
+              setExecutionResult(fullResult);
+              setCurrentView('logs');
+              break;
+            case 'exit':
+            default:
+              process.exit(0);
+              break;
+          }
+        };
         
-        // Wait for the progress tracker to show completion message
-        // The progress tracker now delays unmounting by 2 seconds
-        await new Promise(resolve => setTimeout(resolve, 2500));
-
-        setExecutionResult(result);
-        setCurrentView('results');
+        // Wait for user interaction (handled by progress tracker's selector)
       } else {
         // Switch to executing view for single migration
         setCurrentView('executing');
@@ -204,9 +230,42 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           configuration,
           null // Progress callback handled internally by coordinator
         );
-
-        setExecutionResult(result);
-        setCurrentView('results');
+        
+        // The coordinator already calls progressTracker.complete()
+        // Set up callback for when user selects an action
+        coordinator.progressTracker.onUserContinue = (action) => {
+          // Clean up the progress tracker
+          if (coordinator.progressTracker && coordinator.progressTracker.cleanup) {
+            coordinator.progressTracker.cleanup();
+          }
+          
+          // Handle the selected action
+          switch (action) {
+            case 'menu':
+              handleBackToMenu();
+              break;
+            case 'retry':
+              setExecutionResult(result);
+              handleRetryMigration();
+              break;
+            case 'logs':
+              // Store the full migration result for the log viewer
+              const fullResult = {
+                ...result,
+                // Ensure we have the completion results from the progress tracker
+                ...coordinator.progressTracker.completionResults
+              };
+              setExecutionResult(fullResult);
+              setCurrentView('logs');
+              break;
+            case 'exit':
+            default:
+              process.exit(0);
+              break;
+          }
+        };
+        
+        // Wait for user interaction (handled by progress tracker's selector)
       }
     } catch (error) {
       logger?.error('Tool execution failed', {
@@ -259,6 +318,22 @@ const InkApp = ({ coordinator, logger, onExit }) => {
     setConnectionError(null);
     setNavigationPath([]); // Reset navigation path
     setCurrentView('menu');
+  };
+
+  const handleRetryMigration = () => {
+    // Reset to configuration form with same tool
+    setExecutionResult(null);
+    setExecutionError(null);
+    setConfiguration(null);
+    setCurrentView('configure');
+  };
+
+  const handleViewLogs = () => {
+    // TODO: Implement log viewer
+    // For now, just log to console
+    if (executionResult) {
+      console.log('Migration Results:', JSON.stringify(executionResult, null, 2));
+    }
   };
 
   const handleExit = () => {
@@ -348,7 +423,15 @@ const InkApp = ({ coordinator, logger, onExit }) => {
           result: executionResult,
           config: configuration,
           error: executionError,
-          onContinue: handleBackToMenu
+          onContinue: handleBackToMenu,
+          onRetry: handleRetryMigration,
+          onViewLogs: executionResult ? handleViewLogs : null
+        });
+
+      case 'logs':
+        return React.createElement(LogViewer, {
+          result: executionResult,
+          onBack: () => setCurrentView('results')
         });
 
       case 'connection-error':

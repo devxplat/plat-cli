@@ -86,7 +86,9 @@ class CloudSQLMigrationTool extends ITool {
       if (databases.length === 0) {
         throw new Error('No databases found in source instance');
       }
-    } else if (config.source.databases) {
+      
+      this.logger.info(`Will migrate all databases from source (${databases.length} databases found)`);
+    } else if (config.source.databases && config.source.databases.length > 0) {
       // Verify specified databases exist
       const databases = await this.connectionManager.listDatabases(
         config.source.project,
@@ -103,6 +105,11 @@ class CloudSQLMigrationTool extends ITool {
       if (missingDbs.length > 0) {
         throw new Error(`Databases not found: ${missingDbs.join(', ')}`);
       }
+      
+      this.logger.info(`Will migrate specific databases: ${config.source.databases.join(', ')}`);
+    } else {
+      // Neither includeAll nor specific databases provided
+      throw new Error('Database selection required: either set includeAll to true or specify databases to migrate');
     }
 
     // Return validation success
@@ -166,8 +173,15 @@ class CloudSQLMigrationTool extends ITool {
           config.source // Pass source connection info
         );
         databasesToMigrate = allDatabases.map((db) => db.name);
+        this.logger.info(`Discovery: Found ${databasesToMigrate.length} databases to migrate (all databases)`);
       } else {
         databasesToMigrate = config.source.databases;
+        this.logger.info(`Discovery: Will migrate ${databasesToMigrate.length} specific databases: ${databasesToMigrate.join(', ')}`);
+      }
+      
+      // Validate that we have databases to migrate
+      if (!databasesToMigrate || databasesToMigrate.length === 0) {
+        throw new Error('No databases selected for migration');
       }
 
       // Phase 3: Pre-flight Checks

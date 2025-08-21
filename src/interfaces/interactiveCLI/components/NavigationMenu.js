@@ -22,9 +22,20 @@ const NavigationMenu = ({
   const [menuItems, setMenuItems] = useState(() => getNavigationItems(path));
   const [breadcrumbs, setBreadcrumbs] = useState(() => getBreadcrumbs(path));
   const [error, setError] = useState(null);
+  const [isReady, setIsReady] = useState(false);
+
+  // Add a small delay to prevent immediate input processing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsReady(true);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Handle ESC key for navigation back
   useInput((input, key) => {
+    if (!isReady) return;
+    
     if (key.escape && path.length > 0) {
       onBack();
     }
@@ -45,6 +56,11 @@ const NavigationMenu = ({
   }, [path]);
 
   const handleSelection = (value) => {
+    // Add a safety check to prevent accidental exits
+    if (!value || !isReady) {
+      return;
+    }
+    
     if (value === 'exit') {
       onExit();
     } else {

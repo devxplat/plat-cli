@@ -29,6 +29,9 @@ class OperationConfig {
       forceCompatibility: data.options?.forceCompatibility || false,
       schemaOnly: data.options?.schemaOnly || false,
       dataOnly: data.options?.dataOnly || false,
+      // Users and roles migration options
+      includeUsersRoles: data.options?.includeUsersRoles || false,
+      passwordStrategy: data.options?.passwordStrategy || null,
       ...data.options
     };
 
@@ -140,7 +143,18 @@ class OperationConfig {
         dataOnly: args.dataOnly,
         sslMode: args.sslMode || 'simple',
         useProxy: args.useProxy || false,
-        bypassConfirmation: args.bypassConfirmation || false
+        bypassConfirmation: args.bypassConfirmation || false,
+        // Users and roles migration options
+        includeUsersRoles: args.includeUsersRoles || false,
+        userSelectionMode: args.usersToMigrate ? 'specific' : (args.migrateAllUsers ? 'all' : 'all'),
+        selectedUsers: args.usersToMigrate ? {
+          all: args.usersToMigrate.split(',').map(u => u.trim())
+        } : null,
+        passwordStrategy: args.passwordStrategy ? {
+          type: args.passwordStrategy,
+          defaultPassword: args.defaultPassword,
+          password: args.sourcePassword // For 'same' strategy
+        } : null
       },
       metadata: {
         toolName: args.toolName || 'gcp.cloudsql.migrate',

@@ -485,6 +485,95 @@ class DatabaseOperations {
   }
 
   /**
+   * Apply permissions script to target database
+   */
+  async applyPermissionsScript(targetProject, targetInstance, scriptPath, connectionInfo = {}) {
+    try {
+      this.logger.info('📝 Applying permissions script to target databases...');
+      
+      // Read the script
+      const script = await fs.readFile(scriptPath, 'utf8');
+      
+      // Parse script to find database connections
+      const lines = script.split('\n');
+      let currentDb = 'postgres';
+      let currentStatements = [];
+      const dbStatements = {};
+      
+      for (const line of lines) {
+        if (line.startsWith('\\connect')) {
+          // Execute accumulated statements for current database
+          if (currentStatements.length > 0) {
+            dbStatements[currentDb] = currentStatements.join('\n');
+          }
+          
+          // Switch to new database
+          const match = line.match(/\\connect\s+"?([^"]+)"?/);
+          if (match) {
+            currentDb = match[1];
+            currentStatements = [];
+          }
+        } else if (line.trim() && !line.startsWith('--')) {
+          currentStatements.push(line);
+        }
+      }
+      
+      // Add remaining statements
+      if (currentStatements.length > 0) {
+        dbStatements[currentDb] = currentStatements.join('\n');
+      }
+      
+      // Apply statements per database
+      let totalSuccess = 0;
+      let totalErrors = 0;
+      
+      for (const [dbName, statements] of Object.entries(dbStatements)) {
+        try {
+          this.logger.debug(`Applying permissions to database: ${dbName}`);
+          
+          const pool = await this.connectionManager.connect(
+            targetProject,
+            targetInstance,
+            dbName,
+            false, // isSource = false (target)
+            connectionInfo
+          );
+          const client = await pool.connect();
+          
+          try {
+            // Split and execute statements
+            const stmts = statements
+              .split(';')
+              .map(s => s.trim())
+              .filter(s => s && !s.startsWith('--'));
+            
+            for (const stmt of stmts) {
+              try {
+                await client.query(stmt + ';');
+                totalSuccess++;
+              } catch (error) {
+                totalErrors++;
+                this.logger.warn(`Permission statement failed: ${error.message}`);
+              }
+            }
+          } finally {
+            client.release();
+          }
+        } catch (error) {
+          this.logger.warn(`Could not apply permissions to ${dbName}: ${error.message}`);
+        }
+      }
+      
+      this.logger.info(`✅ Permissions applied: ${totalSuccess} successful, ${totalErrors} failed`);
+      
+      return { success: totalSuccess > 0, totalSuccess, totalErrors };
+    } catch (error) {
+      this.logger.error('Failed to apply permissions script:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Clean up temporary files
    */
   async cleanup() {
