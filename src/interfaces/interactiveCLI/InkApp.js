@@ -14,6 +14,7 @@ import ExecutionResults from './components/ExecutionResults.js';
  */
 const InkApp = ({ coordinator, logger, onExit }) => {
   const [currentView, setCurrentView] = useState('menu'); // 'menu', 'configure', 'summary', 'executing', 'results', 'connection-error'
+  const [navigationPath, setNavigationPath] = useState([]); // Track navigation hierarchy
   const [selectedTool, setSelectedTool] = useState(null);
   const [configuration, setConfiguration] = useState(null);
   const [executionResult, setExecutionResult] = useState(null);
@@ -76,9 +77,20 @@ const InkApp = ({ coordinator, logger, onExit }) => {
     }
   });
 
+  const handleNavigate = (newPath) => {
+    setNavigationPath(newPath);
+  };
+
   const handleToolSelected = (toolName) => {
     setSelectedTool(toolName);
     setCurrentView('configure');
+  };
+
+  const handleNavigationBack = () => {
+    if (navigationPath.length > 0) {
+      const newPath = navigationPath.slice(0, -1);
+      setNavigationPath(newPath);
+    }
   };
 
   const handleConfigurationComplete = async (config) => {
@@ -245,6 +257,7 @@ const InkApp = ({ coordinator, logger, onExit }) => {
     setExecutionResult(null);
     setExecutionError(null);
     setConnectionError(null);
+    setNavigationPath([]); // Reset navigation path
     setCurrentView('menu');
   };
 
@@ -256,8 +269,10 @@ const InkApp = ({ coordinator, logger, onExit }) => {
     switch (currentView) {
       case 'menu':
         return React.createElement(MainMenu, {
-          coordinator: coordinator,
+          path: navigationPath,
+          onNavigate: handleNavigate,
           onToolSelected: handleToolSelected,
+          onBack: handleNavigationBack,
           onExit: handleExit
         });
 

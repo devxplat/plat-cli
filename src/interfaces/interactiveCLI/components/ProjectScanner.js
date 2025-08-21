@@ -6,6 +6,7 @@ import CloudSQLManager from '../../../infrastructure/cloud/gcp-cloudsql-manager.
 import { ShimmerSpinner } from './CustomSpinner.js';
 import SimpleSelect from './SimpleSelect.js';
 import CustomMultiSelect from './CustomMultiSelect.js';
+import EnhancedInstanceSelector from './EnhancedInstanceSelector.js';
 import projectHistory from '../../../infrastructure/config/project-history-manager.js';
 import gcpProjectFetcher from '../../../infrastructure/cloud/gcp-project-fetcher.js';
 
@@ -19,13 +20,15 @@ const ProjectScanner = ({
   onCancel,
   allowMultiple = true,
   filterByVersion = null,
-  isSource = true
+  isSource = true,
+  requireCredentials = false,
+  initialData = null
 }) => {
-  const [projectName, setProjectName] = useState('');
-  const [instances, setInstances] = useState([]);
+  const [projectName, setProjectName] = useState(initialData?.project || '');
+  const [instances, setInstances] = useState(initialData?.instances || []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentStep, setCurrentStep] = useState('loading'); // loading, input, scanning, selection
+  const [currentStep, setCurrentStep] = useState(initialData ? 'selection' : 'loading'); // loading, input, scanning, selection
   const [scanCache, setScanCache] = useState({}); // Cache scan results
   const [suggestions, setSuggestions] = useState([]); // Autocomplete suggestions
   const [projectCount, setProjectCount] = useState(0); // Number of projects found
@@ -35,6 +38,12 @@ const ProjectScanner = ({
 
   // Load autocomplete suggestions on component mount
   useEffect(() => {
+    // Skip loading if we have initial data (we're returning from navigation)
+    if (initialData && initialData.instances?.length > 0) {
+      setCurrentStep('selection');
+      return;
+    }
+    
     let mounted = true;
 
     const loadSuggestions = async (forceRefresh = false) => {
@@ -117,15 +126,39 @@ const ProjectScanner = ({
   useInput((input, key) => {
     if (key.escape) {
       if (currentStep !== 'input') {
-        setCurrentStep('input');
-        setError(null);
+        // Preserve current state when going back
+        const preservedData = {
+          project: projectName,
+          instances,
+          totalFound: instances.length,
+          totalSelected: 0,
+          isSource,
+          currentStep
+        };
+        
+        if (currentStep === 'selection' && initialData) {
+          // If we're in selection and have initial data, go back with preserved state
+          onCancel?.(preservedData);
+        } else {
+          setCurrentStep('input');
+          setError(null);
+        }
       } else {
-        onCancel?.();
+        // Preserve state when canceling from input
+        const preservedData = {
+          project: projectName,
+          instances,
+          totalFound: instances.length,
+          totalSelected: 0,
+          isSource,
+          currentStep: 'input'
+        };
+        onCancel?.(preservedData);
       }
     }
 
-    // Add cache refresh functionality with F5 or Ctrl+R
-    if ((key.function && key.name === 'f5') || (key.ctrl && input === 'r')) {
+    // Add cache refresh functionality with Ctrl+U or Ctrl+R
+    if ((key.ctrl && input === 'u') || (key.ctrl && input === 'r')) {
       if (currentStep === 'input') {
         refreshCache();
       }
@@ -373,7 +406,7 @@ const ProjectScanner = ({
     }
   };
 
-  // Handle instance selection
+  // Handle instance selection (legacy for non-credential mode)
   const handleInstanceSelection = (selectedValues) => {
     const selected = selectedValues.map((v) => instances[parseInt(v)]);
 
@@ -384,6 +417,11 @@ const ProjectScanner = ({
       totalSelected: selected.length,
       isSource
     });
+  };
+
+  // Handle enhanced selection with credentials
+  const handleEnhancedSelection = (result) => {
+    onComplete(result);
   };
 
   // Render based on current step
@@ -426,7 +464,7 @@ const ProjectScanner = ({
             React.createElement(
               Text,
               { color: colorPalettes.dust.tertiary, dimColor: true },
-              `💡 Start typing to see suggestions • Enter to accept • F5 to refresh cache`
+              `💡 Start typing to see suggestions • Enter to accept • Ctrl+U to refresh cache`
             )
         );
 
@@ -442,6 +480,31 @@ const ProjectScanner = ({
         );
 
       case 'selection':
+        // Use enhanced selector if credentials are required
+        if (requireCredentials) {
+          return React.createElement(EnhancedInstanceSelector, {
+            instances,
+            onSubmit: handleEnhancedSelection,
+            onCancel: (preservedData) => {
+              if (preservedData) {
+                // If enhanced selector preserved data, pass it up
+                onCancel?.(preservedData);
+              } else {
+                setCurrentStep('input');
+                setError(null);
+              }
+            },
+            allowMultiple,
+            label: `Select CloudSQL Instances`,
+            isSource,
+            // Pass initial state if we have it
+            initialSelections: initialData?.initialSelections || [],
+            initialCredentials: initialData?.initialCredentials || {},
+            initialCredentialsMode: initialData?.initialCredentialsMode || 'individual'
+          });
+        }
+
+        // Legacy selection mode without credentials
         const options = instances.map((inst, index) => ({
           label: inst.label,
           value: index.toString()

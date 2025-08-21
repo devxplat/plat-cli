@@ -330,7 +330,11 @@ class CloudSQLMigrationTool extends ITool {
         '--dry-run                      Simulate migration without executing',
         '--retry-attempts <number>      Number of retry attempts (default: 3)',
         '--jobs <number>                Parallel jobs for pg_restore (default: 1)',
-        '--force-compatibility          Skip version compatibility checks'
+        '--force-compatibility          Skip version compatibility checks',
+        '--strategy <strategy>          Migration strategy (auto-detected: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, manual-mapping, custom)',
+        '--conflict-resolution <method> Conflict resolution (fail, prefix, suffix, merge, rename-schema)',
+        '--sources-file <file>          File with source instances for batch migration',
+        '--mapping-file <file>          Migration mapping file for complex batch operations'
       ],
       examples: [
         {
@@ -347,6 +351,16 @@ class CloudSQLMigrationTool extends ITool {
           description: 'Dry run migration',
           command:
             'plat-cli gcp cloudsql migrate --source-project my-source --source-instance source-db --target-project my-target --target-instance target-db --include-all --dry-run'
+        },
+        {
+          description: 'Batch migration with custom strategy',
+          command:
+            'plat-cli gcp cloudsql migrate --sources-file instances.txt --target-project my-target --target-instance target-db --strategy consolidate --conflict-resolution prefix'
+        },
+        {
+          description: 'Advanced batch migration with mapping file',
+          command:
+            'plat-cli gcp cloudsql migrate --mapping-file migrations.json --strategy version-based --dry-run'
         }
       ]
     };

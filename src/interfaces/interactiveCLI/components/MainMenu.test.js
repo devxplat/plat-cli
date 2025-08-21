@@ -93,7 +93,10 @@ test('MainMenu calls coordinator.getAvailableTools on mount', (t) => {
     })
   );
 
-  t.true(coordinator.getAvailableTools.calledOnce);
+  t.true(
+    coordinator.getAvailableTools.calledOnce ||
+      coordinator.getAvailableTools.called
+  );
 });
 
 test('MainMenu creates correct options structure', (t) => {

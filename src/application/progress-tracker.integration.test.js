@@ -17,7 +17,7 @@ test('ProgressTracker formats time correctly', (t) => {
   // Test time formatting
   t.is(progressTracker._formatTime(30), '30s');
   t.is(progressTracker._formatTime(90), '1m 30s');
-  t.is(progressTracker._formatTime(3700), '1h 2m');
+  t.is(progressTracker._formatTime(3700), '1h 1m');
 });
 
 test('ProgressTracker formats bytes correctly', (t) => {

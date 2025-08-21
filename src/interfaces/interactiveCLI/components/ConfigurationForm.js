@@ -12,7 +12,9 @@ import InstanceSelector from './InstanceSelector.js';
 import SimpleSelect from './SimpleSelect.js';
 import ProjectScanner from './ProjectScanner.js';
 import MigrationPatternDetector from './MigrationPatternDetector.js';
-import PasswordConfiguration from './PasswordConfiguration.js';
+import SingleInstanceForm from './SingleInstanceForm.js';
+// import CredentialsConfiguration from './CredentialsConfiguration.js'; // Removed - now integrated in ProjectScanner
+import { getAvailableStrategies, getConflictResolutionOptions } from '../../../domain/strategies/migration-strategies.js';
 
 // Use custom theme for consistent styling
 
@@ -23,6 +25,8 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [navigationHistory, setNavigationHistory] = useState([{}]); // Track navigation history for back navigation
+  const [stepHistory, setStepHistory] = useState([0]); // Track step index history for proper back navigation
 
   // Get all configuration steps
   const getAllSteps = () => {
@@ -33,18 +37,18 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'select',
           label: 'Migration Mode',
           options: [
-            { label: 'Interactive (Scan Projects)', value: 'interactive' },
-            { label: 'Single instance migration', value: 'single' },
-            { label: 'Multiple instances (batch)', value: 'batch' }
+            { label: 'Single or Batch Guided with AutoDiscovery', value: 'interactive' },
+            { label: 'Single Instance Migration', value: 'single' },
+            { label: 'Batch Migration (Multiple Instances)', value: 'batch' }
           ],
-          defaultValue: 'single'
+          defaultValue: 'interactive'
         },
         {
           key: 'sourceProjectScan',
           type: 'custom',
           label: 'Source Project and Instances',
           component: 'ProjectScanner',
-          componentProps: { isSource: true, allowMultiple: true },
+          componentProps: { isSource: true, allowMultiple: true, requireCredentials: true },
           condition: (data) => data.migrationMode === 'interactive'
         },
         {
@@ -52,7 +56,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           type: 'custom',
           label: 'Target Project and Instances',
           component: 'ProjectScanner',
-          componentProps: { isSource: false, allowMultiple: true },
+          componentProps: { isSource: false, allowMultiple: true, requireCredentials: true },
           condition: (data) => data.migrationMode === 'interactive'
         },
         {
@@ -63,12 +67,29 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           condition: (data) => data.migrationMode === 'interactive' && data.sourceProjectScan && data.targetProjectScan
         },
         {
-          key: 'passwordConfig',
-          type: 'custom',
-          label: 'Password Configuration',
-          component: 'PasswordConfiguration',
-          condition: (data) => data.migrationMode === 'interactive' && data.sourceProjectScan && data.targetProjectScan
+          key: 'migrationStrategy',
+          type: 'select',
+          label: 'Migration Strategy',
+          options: (data) => getAvailableStrategies(data.migrationPattern?.pattern),
+          defaultValue: (data) => data.migrationPattern?.strategy,
+          condition: (data) => (
+            (data.migrationMode === 'interactive' && data.migrationPattern) ||
+            (data.migrationMode === 'batch')
+          )
         },
+        {
+          key: 'conflictResolution',
+          type: 'select',
+          label: 'Database Name Conflict Resolution',
+          options: (data) => getConflictResolutionOptions(data.migrationStrategy || data.batchStrategy),
+          defaultValue: 'fail',
+          condition: (data) => (
+            (data.migrationMode === 'interactive' && data.migrationStrategy && 
+             ['consolidate', 'manual-mapping'].includes(data.migrationStrategy)) ||
+            (data.migrationMode === 'batch' && data.batchStrategy === 'consolidate')
+          )
+        },
+        // Credentials now integrated into ProjectScanner for better UX
         {
           key: 'sourceSelection',
           type: 'custom',
@@ -77,19 +98,10 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           condition: (data) => data.migrationMode === 'batch'
         },
         {
-          key: 'sourceProject',
-          type: 'text',
-          label: 'Source GCP Project',
-          placeholder: 'Enter source project ID...',
-          required: true,
-          condition: (data) => data.migrationMode === 'single'
-        },
-        {
-          key: 'sourceInstance',
-          type: 'text',
-          label: 'Source CloudSQL Instance',
-          placeholder: 'Enter source instance name...',
-          required: true,
+          key: 'singleInstanceConfig',
+          type: 'custom',
+          label: 'Instance Configuration',
+          component: 'SingleInstanceForm',
           condition: (data) => data.migrationMode === 'single'
         },
         {
@@ -98,7 +110,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           label: 'Target GCP Project',
           placeholder: 'Enter target project ID...',
           required: true,
-          condition: (data) => data.migrationMode !== 'interactive'
+          condition: (data) => data.migrationMode === 'batch'
         },
         {
           key: 'targetInstance',
@@ -106,7 +118,7 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
           label: 'Target CloudSQL Instance',
           placeholder: 'Enter target instance name...',
           required: true,
-          condition: (data) => data.migrationMode !== 'interactive'
+          condition: (data) => data.migrationMode === 'batch'
         },
         {
           key: 'batchStrategy',
@@ -212,24 +224,86 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
   // Handle keyboard navigation
   useInput((input, key) => {
     if (key.escape) {
-      if (currentStepIndex > 0) {
-        setCurrentStepIndex(prev => prev - 1);
-        setError(null);
-      } else {
-        onCancel?.();
-      }
+      handleBack();
     }
   });
+  
+  // Handle going back to previous step
+  const handleBack = () => {
+    if (stepHistory.length > 1) {
+      // Remove current step from history
+      const newStepHistory = [...stepHistory];
+      newStepHistory.pop();
+      
+      // Get the previous step index
+      const previousStepIndex = newStepHistory[newStepHistory.length - 1];
+      
+      // Remove current state from navigation history
+      const newNavigationHistory = [...navigationHistory];
+      newNavigationHistory.pop();
+      
+      // Get the previous state
+      const previousState = newNavigationHistory[newNavigationHistory.length - 1] || {};
+      
+      // Update all states
+      setStepHistory(newStepHistory);
+      setNavigationHistory(newNavigationHistory);
+      setFormData(previousState);
+      setCurrentStepIndex(previousStepIndex);
+      setError(null);
+    } else {
+      // We're at the first step, cancel the form
+      onCancel?.();
+    }
+  };
 
   // Handle moving to next step
   const handleNext = async () => {
     const visibleSteps = getVisibleSteps();
+    
     if (currentStepIndex + 1 >= visibleSteps.length) {
       // All steps completed, build final config
       const config = await buildFinalConfig();
       onComplete(config);
     } else {
-      setCurrentStepIndex(prev => prev + 1);
+      // Find the actual next step index considering conditions
+      let nextStepIndex = -1;
+      const allSteps = getAllSteps();
+      const currentStepKey = visibleSteps[currentStepIndex]?.key;
+      
+      // Find current step in all steps
+      let foundCurrent = false;
+      for (let i = 0; i < allSteps.length; i++) {
+        if (allSteps[i].key === currentStepKey) {
+          foundCurrent = true;
+          continue;
+        }
+        
+        if (foundCurrent) {
+          // Check if this next step is visible
+          if (!allSteps[i].condition || allSteps[i].condition(formData)) {
+            // Find this step's index in visible steps
+            const visibleIndex = visibleSteps.findIndex(s => s.key === allSteps[i].key);
+            if (visibleIndex !== -1) {
+              nextStepIndex = visibleIndex;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (nextStepIndex === -1) {
+        // Fallback to simple increment
+        nextStepIndex = currentStepIndex + 1;
+      }
+      
+      // Save current state and step index to history
+      const newNavigationHistory = [...navigationHistory, { ...formData }];
+      const newStepHistory = [...stepHistory, nextStepIndex];
+      
+      setNavigationHistory(newNavigationHistory);
+      setStepHistory(newStepHistory);
+      setCurrentStepIndex(nextStepIndex);
     }
     setError(null);
   };
@@ -271,32 +345,24 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
       );
 
       const pattern = formData.migrationPattern || {};
-      const passwords = formData.passwordConfig?.passwords || {};
-      const passwordMode = formData.passwordConfig?.mode || 'single';
-      
-      // Get single password if in single mode
-      const singlePassword = passwordMode === 'single' && passwords[Object.keys(passwords)[0]]?.value;
+      // Credentials now come directly from instances
 
-      // Create mapping based on detected pattern
+      // Create mapping based on user-selected strategy
       const mapping = new MigrationMapping({
-        strategy: pattern.strategy || 'simple',
+        strategy: formData.migrationStrategy || pattern.strategy || 'simple',
         sources: formData.sourceProjectScan.instances.map(inst => ({
           project: inst.project,
           instance: inst.instance,
           databases: inst.databases,
-          user: 'postgres',
-          password: passwordMode === 'single' 
-            ? singlePassword 
-            : passwords[`${inst.project}:${inst.instance}`]?.value,
+          user: inst.credentials?.user || 'postgres',
+          password: inst.credentials?.password,
           ip: inst.publicIp || inst.ip
         })),
         targets: formData.targetProjectScan.instances.map(inst => ({
           project: inst.project,
           instance: inst.instance,
-          user: 'postgres',
-          password: passwordMode === 'single' 
-            ? singlePassword 
-            : passwords[`${inst.project}:${inst.instance}`]?.value,
+          user: inst.credentials?.user || 'postgres',
+          password: inst.credentials?.password,
           ip: inst.publicIp || inst.ip
         })),
         conflictResolution: formData.conflictResolution || 'fail',
@@ -334,12 +400,19 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         '../../../domain/models/migration-mapping.js'
       );
 
+      // For batch mode, we'll still use traditional credential config until updated
       const mapping = new MigrationMapping({
         strategy: formData.batchStrategy || 'consolidate',
-        sources: formData.sourceSelection.instances,
+        sources: formData.sourceSelection.instances.map(inst => ({
+          ...inst,
+          user: inst.credentials?.user || 'postgres',
+          password: inst.credentials?.password
+        })),
         targets: [{
           project: formData.targetProject,
-          instance: formData.targetInstance
+          instance: formData.targetInstance,
+          user: 'postgres', // Batch mode target still uses defaults for now
+          password: undefined
         }],
         conflictResolution: formData.conflictResolution || 'fail',
         options: {
@@ -372,15 +445,22 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
             .filter(Boolean)
         : null;
 
+    // Extract configuration from SingleInstanceForm
+    const singleConfig = formData.singleInstanceConfig || {};
+
     return new OperationConfig({
       source: {
-        project: formData.sourceProject,
-        instance: formData.sourceInstance,
-        databases
+        project: singleConfig.source?.project || formData.sourceProject,
+        instance: singleConfig.source?.instance || formData.sourceInstance,
+        databases,
+        user: singleConfig.source?.credentials?.user || 'postgres',
+        password: singleConfig.source?.credentials?.password
       },
       target: {
-        project: formData.targetProject,
-        instance: formData.targetInstance
+        project: singleConfig.target?.project || formData.targetProject,
+        instance: singleConfig.target?.instance || formData.targetInstance,
+        user: singleConfig.target?.credentials?.user || 'postgres',
+        password: singleConfig.target?.credentials?.password
       },
       options: {
         includeAll: formData.databaseSelection === 'all',
@@ -413,11 +493,19 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         });
 
       case 'select':
+        // Handle dynamic options and defaultValue
+        const options = typeof currentStep.options === 'function' 
+          ? currentStep.options(formData) 
+          : currentStep.options;
+        const defaultValue = typeof currentStep.defaultValue === 'function'
+          ? currentStep.defaultValue(formData)
+          : currentStep.defaultValue;
+        
         // Use SimpleSelect for better control
         return React.createElement(SimpleSelect, {
           key: currentStep.key,
-          options: currentStep.options,
-          defaultValue: savedValue || currentStep.defaultValue,
+          options: options,
+          defaultValue: savedValue || defaultValue,
           showNavigationHints: false, // ConfigurationForm already shows hints
           onSubmit: (value) => {
             // Convert string 'true'/'false' to boolean for dryRun
@@ -451,13 +539,12 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
             handleInputChange(currentStep.key, data);
             handleNext();
           },
-          onCancel: () => {
-            if (currentStepIndex > 0) {
-              setCurrentStepIndex(prev => prev - 1);
-              setError(null);
-            } else {
-              onCancel?.();
+          onCancel: (preservedData) => {
+            // Save any preserved data before going back
+            if (preservedData) {
+              handleInputChange(currentStep.key, preservedData);
             }
+            handleBack();
           },
           ...(currentStep.componentProps || {})
         };
@@ -471,7 +558,19 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
               ...componentProps,
               label: currentStep.componentProps?.isSource 
                 ? 'Source GCP Project' 
-                : 'Target GCP Project'
+                : 'Target GCP Project',
+              initialData: formData[currentStep.key], // Pass saved data for restoration
+              onComplete: (data) => {
+                handleInputChange(currentStep.key, data);
+                handleNext();
+              },
+              onCancel: (preservedData) => {
+                // Save any preserved data before going back
+                if (preservedData) {
+                  handleInputChange(currentStep.key, preservedData);
+                }
+                handleBack();
+              }
             });
             
           case 'MigrationPatternDetector':
@@ -486,15 +585,24 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
               onConfirm: handleNext
             });
             
-          case 'PasswordConfiguration':
-            const allInstances = [
-              ...(formData.sourceProjectScan?.instances || []),
-              ...(formData.targetProjectScan?.instances || [])
-            ];
-            return React.createElement(PasswordConfiguration, {
+          case 'SingleInstanceForm':
+            return React.createElement(SingleInstanceForm, {
               ...componentProps,
-              instances: allInstances
+              initialData: formData[currentStep.key] || {}, // Pass saved form data
+              onComplete: (data) => {
+                handleInputChange(currentStep.key, data);
+                handleNext();
+              },
+              onCancel: (preservedData) => {
+                // Save current form state before going back
+                if (preservedData) {
+                  handleInputChange(currentStep.key, preservedData);
+                }
+                handleBack();
+              }
             });
+            
+          // CredentialsConfiguration removed - now integrated in ProjectScanner
             
           default:
             return React.createElement(

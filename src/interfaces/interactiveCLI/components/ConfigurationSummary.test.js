@@ -92,8 +92,9 @@ test('ConfigurationSummary displays dry run mode', (t) => {
   // Component starts in loading state, but config has dryRun flag
   t.true(
     output.includes('Validating') ||
-      output.includes('dry') ||
-      output.includes('simulation')
+      output.toLowerCase().includes('dry run') ||
+      output.toLowerCase().includes('live migration') ||
+      output.toLowerCase().includes('simulation')
   );
 });
 

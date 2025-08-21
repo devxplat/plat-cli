@@ -3,12 +3,22 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { colors } from './colors.js';
+import renderMigrationSummary from '../common/utils/render-migration-summary.js';
 
 // Import application services - using dynamic imports to avoid circular dependencies
 // Services are imported dynamically in init() method to avoid circular dependencies
 
 // Import domain models
 import OperationConfig from '../../domain/models/operation-config.js';
+import { 
+  detectMigrationPattern, 
+  getRecommendedStrategy, 
+  validateStrategyCompatibility,
+  getAllStrategyValues,
+  getAllConflictResolutionValues,
+  getStrategyDescription,
+  getConflictResolutionDescription
+} from '../../domain/strategies/migration-strategies.js';
 
 /**
  * Classic CLI Interface
@@ -203,8 +213,8 @@ class ClassicCLI {
       .option('--config <file>', 'Configuration file')
       .option('--sources-file <file>', 'File with source instances (txt/json/csv)')
       .option('--mapping-file <file>', 'Migration mapping file (json)')
-      .option('--strategy <strategy>', 'Migration strategy (simple/consolidate/version-based/custom)', 'simple')
-      .option('--conflict-resolution <resolution>', 'Conflict resolution (fail/prefix/suffix/merge)', 'fail')
+      .option('--strategy <strategy>', 'Migration strategy (auto-detected if not specified: simple, consolidate, distribute, replicate, version-based, round-robin, split-by-database, manual-mapping, custom)')
+      .option('--conflict-resolution <resolution>', 'Conflict resolution (fail, prefix, suffix, merge, rename-schema)')
       .option('--max-parallel <number>', 'Max parallel migrations', '3')
       .option('--stop-on-error', 'Stop batch on first error', false)
       .option('--default-project <project>', 'Default GCP project for instances')
@@ -260,6 +270,65 @@ class ClassicCLI {
   }
 
   /**
+   * Validate and enhance strategy options with intelligent defaults
+   */
+  async validateAndEnhanceStrategy(options) {
+    // Validate strategy parameter if provided
+    if (options.strategy) {
+      const validStrategies = getAllStrategyValues();
+      if (!validStrategies.includes(options.strategy)) {
+        console.log(colors.error(`❌ Invalid strategy: ${options.strategy}`));
+        console.log(colors.warning('Available strategies:'));
+        validStrategies.forEach(strategy => {
+          console.log(colors.tertiary(`  • ${strategy}: ${getStrategyDescription(strategy)}`));
+        });
+        process.exit(1);
+      }
+    }
+
+    // Validate conflict resolution parameter if provided
+    if (options.conflictResolution) {
+      const validResolutions = getAllConflictResolutionValues();
+      if (!validResolutions.includes(options.conflictResolution)) {
+        console.log(colors.error(`❌ Invalid conflict resolution: ${options.conflictResolution}`));
+        console.log(colors.warning('Available conflict resolutions:'));
+        validResolutions.forEach(resolution => {
+          console.log(colors.tertiary(`  • ${resolution}: ${getConflictResolutionDescription(resolution)}`));
+        });
+        process.exit(1);
+      }
+    }
+
+    // For single migrations, detect pattern and suggest strategy
+    if (!options.sourcesFile && !options.mappingFile) {
+      // Single migration: always 1:1 pattern
+      const pattern = '1:1';
+      const recommendedStrategy = getRecommendedStrategy(pattern);
+      
+      // Set default strategy if not provided
+      if (!options.strategy) {
+        options.strategy = recommendedStrategy;
+        console.log(colors.tertiary(`💡 Auto-detected migration pattern: ${pattern}`));
+        console.log(colors.tertiary(`💡 Using recommended strategy: ${options.strategy} (${getStrategyDescription(options.strategy)})`));
+      } else {
+        // Validate provided strategy against pattern
+        const validation = validateStrategyCompatibility(options.strategy, pattern);
+        if (validation.warnings.length > 0) {
+          console.log(colors.warning('⚠️ Strategy warnings:'));
+          validation.warnings.forEach(warning => {
+            console.log(colors.warning(`  • ${warning}`));
+          });
+        }
+      }
+
+      // Set default conflict resolution if not provided
+      if (!options.conflictResolution) {
+        options.conflictResolution = 'fail'; // Safe default for single migrations
+      }
+    }
+  }
+
+  /**
    * Handle migrate command
    */
   async handleMigrate(options) {
@@ -291,6 +360,9 @@ class ClassicCLI {
         console.log('');
         process.exit(1);
       }
+
+      // Validate and enhance strategy options
+      await this.validateAndEnhanceStrategy(options);
 
       console.log(colors.primary('🚀 Starting CloudSQL Migration'));
 
@@ -386,9 +458,31 @@ class ClassicCLI {
           }));
         }
 
+        // Detect pattern and determine strategy for batch migration
+        const sourceCount = parsedData.sources.length;
+        const targetCount = 1; // Single target for sources-file mode
+        const detectedPattern = detectMigrationPattern(sourceCount, targetCount);
+        
+        // Use provided strategy or recommend based on pattern
+        let finalStrategy = options.strategy;
+        if (!finalStrategy) {
+          finalStrategy = getRecommendedStrategy(detectedPattern);
+          console.log(colors.tertiary(`💡 Auto-detected migration pattern: ${detectedPattern} (${sourceCount} sources → ${targetCount} target)`));
+          console.log(colors.tertiary(`💡 Using recommended strategy: ${finalStrategy} (${getStrategyDescription(finalStrategy)})`));
+        } else {
+          // Validate provided strategy
+          const validation = validateStrategyCompatibility(finalStrategy, detectedPattern);
+          if (validation.warnings.length > 0) {
+            console.log(colors.warning('⚠️ Strategy warnings:'));
+            validation.warnings.forEach(warning => {
+              console.log(colors.warning(`  • ${warning}`));
+            });
+          }
+        }
+
         // Create mapping based on strategy
         mapping = new MigrationMapping({
-          strategy: options.strategy || 'consolidate',
+          strategy: finalStrategy,
           sources: parsedData.sources,
           targets: [{
             project: options.targetProject,
@@ -927,65 +1021,12 @@ class ClassicCLI {
   }
 
   /**
-   * Display migration summary
+   * Display migration summary using shared MigrationSummary component
    */
   displayMigrationSummary(result, config) {
-    console.log('');
-    console.log(colors.success('═══════════════════════════════════════════════════'));
-    console.log(colors.success('              MIGRATION COMPLETED                  '));
-    console.log(colors.success('═══════════════════════════════════════════════════'));
-    console.log('');
-
-    // Basic migration info
-    console.log(colors.primary('📊 Migration Summary:'));
-    console.log(chalk.white(`   Source: ${config.source.project}/${config.source.instance}`));
-    console.log(chalk.white(`   Target: ${config.target.project}/${config.target.instance}`));
-    
-    // Database information
-    if (result.databaseDetails && result.databaseDetails.length > 0) {
-      const databaseNames = result.databaseDetails.map(db => db.name).join(', ');
-      const totalCount = result.databaseDetails.length;
-      if (totalCount === 1) {
-        console.log(chalk.white(`   Database migrated: ${databaseNames}`));
-      } else {
-        console.log(chalk.white(`   Databases migrated: ${databaseNames} (${totalCount} databases)`));
-      }
-    } else if (result.processedDatabases) {
-      console.log(chalk.white(`   Databases migrated: ${result.processedDatabases}`));
-    } else if (result.databasesToMigrate) {
-      console.log(chalk.white(`   Databases migrated: ${result.databasesToMigrate.length}`));
-    } else if (config.options.includeAll) {
-      console.log(chalk.white(`   Databases migrated: All available databases`));
-    } else if (config.source.databases) {
-      console.log(chalk.white(`   Databases migrated: ${config.source.databases.join(', ')}`));
-    }
-
-    // Size and duration information
-    if (result.totalSize) {
-      console.log(chalk.white(`   Total size: ${result.totalSize}`));
-    }
-    if (result.duration) {
-      console.log(chalk.white(`   Duration: ${this._formatDuration(result.duration)}`));
-    }
-
-    // Migration mode
-    if (config.options.schemaOnly) {
-      console.log(chalk.white(`   Mode: Schema only`));
-    } else if (config.options.dataOnly) {
-      console.log(chalk.white(`   Mode: Data only`));
-    } else {
-      console.log(chalk.white(`   Mode: Full migration (schema + data)`));
-    }
-
-    // Additional result information
-    if (result.message) {
-      console.log(colors.warning(`   Status: ${result.message}`));
-    }
-
-    console.log('');
-    console.log(colors.success('✅ Migration completed successfully'));
-    console.log(colors.success('═══════════════════════════════════════════════════'));
-    console.log('');
+    // Use the shared MigrationSummary component
+    renderMigrationSummary(result, config, false);
+    console.log(''); // Add spacing after the summary
   }
 
   /**
@@ -1158,56 +1199,63 @@ class ClassicCLI {
   }
 
   /**
-   * Display batch migration results
+   * Display batch migration results using shared MigrationSummary component
    */
   displayBatchResults(result) {
-    console.log('');
-    console.log(colors.success('═══════════════════════════════════════════════════'));
-    console.log(colors.success('                BATCH MIGRATION RESULTS            '));
-    console.log(colors.success('═══════════════════════════════════════════════════'));
-    console.log('');
+    // Format result for MigrationSummary component
+    const formattedResult = {
+      operations: [],
+      totalDuration: result.summary.duration
+    };
 
-    // Summary
-    console.log(colors.primary('📊 Summary:'));
-    console.log(chalk.white(`   Strategy: ${result.summary.strategy}`));
-    console.log(chalk.white(`   Mapping Type: ${result.summary.mappingType}`));
-    console.log(chalk.white(`   Total Tasks: ${result.summary.totalTasks}`));
-    console.log(colors.success(`   ✅ Successful: ${result.summary.successful}`));
-    
-    if (result.summary.failed > 0) {
-      console.log(colors.error(`   ❌ Failed: ${result.summary.failed}`));
-    }
-    
-    if (result.summary.skipped > 0) {
-      console.log(colors.warning(`   ⏭️ Skipped: ${result.summary.skipped}`));
-    }
-    
-    console.log(chalk.white(`   Success Rate: ${result.summary.successRate}`));
-    console.log(chalk.white(`   Duration: ${result.summary.durationFormatted}`));
-    console.log('');
-
-    // Performance metrics
-    if (result.performance) {
-      console.log(colors.primary('⚡ Performance:'));
-      console.log(chalk.white(`   Average Duration: ${this._formatDuration(result.performance.avgDuration)}`));
-      console.log(chalk.white(`   Min Duration: ${this._formatDuration(result.performance.minDuration)}`));
-      console.log(chalk.white(`   Max Duration: ${this._formatDuration(result.performance.maxDuration)}`));
-      console.log('');
-    }
-
-    // Successful migrations
-    if (result.successful.length > 0) {
-      console.log(colors.success('✅ Successful Migrations:'));
-      result.successful.forEach((migration, index) => {
-        console.log(colors.success(`   ${index + 1}. ${migration.source} → ${migration.target}`));
-        console.log(colors.tertiary(`      Databases: ${migration.databases.join(', ') || 'all'}`));
-        console.log(colors.tertiary(`      Duration: ${migration.durationFormatted}`));
+    // Add successful operations
+    if (result.successful) {
+      result.successful.forEach(migration => {
+        formattedResult.operations.push({
+          status: 'success',
+          config: {
+            source: {
+              project: migration.source.split(':')[0],
+              instance: migration.source.split(':')[1],
+              databases: migration.databases
+            },
+            target: {
+              project: migration.target.split(':')[0],
+              instance: migration.target.split(':')[1]
+            }
+          },
+          duration: migration.duration
+        });
       });
-      console.log('');
     }
 
-    // Failed migrations
+    // Add failed operations
+    if (result.failed) {
+      result.failed.forEach(migration => {
+        formattedResult.operations.push({
+          status: 'error',
+          config: {
+            source: {
+              project: migration.source.split(':')[0],
+              instance: migration.source.split(':')[1],
+              databases: migration.databases
+            },
+            target: {
+              project: migration.target.split(':')[0],
+              instance: migration.target.split(':')[1]
+            }
+          },
+          error: migration.error
+        });
+      });
+    }
+
+    // Use the shared MigrationSummary component
+    renderMigrationSummary(formattedResult, null, true);
+    
+    // Keep detailed failure information if needed
     if (result.failed.length > 0) {
+      console.log('');
       console.log(colors.error('❌ Failed Migrations:'));
       result.failed.forEach((migration, index) => {
         console.log(colors.error(`   ${index + 1}. ${migration.source} → ${migration.target}`));

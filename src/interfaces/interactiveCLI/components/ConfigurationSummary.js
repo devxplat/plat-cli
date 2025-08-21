@@ -151,9 +151,25 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
             ),
             ...sources.slice(0, 3).map((src, i) => 
               React.createElement(
-                Text,
-                { key: i, color: 'cyan', marginLeft: 2 },
-                `→ ${src.project}:${src.instance}${src.databases?.length ? ` (${src.databases.length} DBs)` : ''}`
+                Box,
+                { key: i, flexDirection: 'column', marginLeft: 2 },
+                React.createElement(
+                  Text,
+                  { color: 'cyan' },
+                  `→ ${src.project}:${src.instance}${src.databases?.length ? ` (${src.databases.length} DBs)` : ''}`
+                ),
+                // Show databases if available
+                src.databases?.length > 0 && React.createElement(
+                  Text,
+                  { color: colorPalettes.dust.tertiary, marginLeft: 2 },
+                  `  DBs: ${src.databases.slice(0, 3).join(', ')}${src.databases.length > 3 ? `, +${src.databases.length - 3} more` : ''}`
+                ),
+                // Show user if available
+                src.user && React.createElement(
+                  Text,
+                  { color: colorPalettes.dust.tertiary, marginLeft: 2 },
+                  `  User: ${src.user}`
+                )
               )
             ),
             sources.length > 3 && React.createElement(
@@ -177,9 +193,19 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
             ),
             ...targets.slice(0, 3).map((tgt, i) => 
               React.createElement(
-                Text,
-                { key: i, color: 'green', marginLeft: 2 },
-                `→ ${tgt.project}:${tgt.instance}`
+                Box,
+                { key: i, flexDirection: 'column', marginLeft: 2 },
+                React.createElement(
+                  Text,
+                  { color: 'green' },
+                  `→ ${tgt.project}:${tgt.instance}`
+                ),
+                // Show user if available
+                tgt.user && React.createElement(
+                  Text,
+                  { color: colorPalettes.dust.tertiary, marginLeft: 2 },
+                  `  User: ${tgt.user}`
+                )
               )
             ),
             targets.length > 3 && React.createElement(
@@ -189,17 +215,34 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
             )
           )
         ),
-        // Show total databases count
+        // Show databases summary
         isInteractive && React.createElement(
           UnorderedList.Item,
           null,
           React.createElement(
-            Text,
-            null,
-            React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Total databases: '),
-            React.createElement(Text, { color: 'yellow', bold: true }, 
-              sources.reduce((sum, src) => sum + (src.databases?.length || 0), 0)
-            )
+            Box,
+            { flexDirection: 'column' },
+            React.createElement(
+              Text,
+              null,
+              React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Databases summary: '),
+              React.createElement(Text, { color: 'yellow', bold: true }, 
+                sources.reduce((sum, src) => sum + (src.databases?.length || 0), 0) + ' total'
+              )
+            ),
+            // Show unique database names
+            (() => {
+              const allDbs = sources.flatMap(src => src.databases || []);
+              const uniqueDbs = [...new Set(allDbs)];
+              if (uniqueDbs.length > 0) {
+                return React.createElement(
+                  Text,
+                  { color: colorPalettes.dust.tertiary, marginLeft: 2 },
+                  `→ ${uniqueDbs.slice(0, 5).join(', ')}${uniqueDbs.length > 5 ? `, +${uniqueDbs.length - 5} more` : ''}`
+                );
+              }
+              return null;
+            })()
           )
         ),
         // Show password configuration mode
@@ -212,8 +255,8 @@ const ConfigurationSummary = ({ config, coordinator, onConfirm, onCancel }) => {
             React.createElement(Text, { color: colorPalettes.dust.tertiary }, 'Password mode: '),
             React.createElement(Text, { color: 'white', bold: true }, 
               config.mapping.sources.every(s => s.password === config.mapping.sources[0].password) 
-                ? 'Single password' 
-                : 'Multiple passwords'
+                ? 'Single password for all instances' 
+                : 'Different passwords per instance'
             )
           )
         )

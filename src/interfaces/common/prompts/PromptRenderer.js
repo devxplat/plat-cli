@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, Box, Text } from 'ink';
-import { ShimmerSpinner } from '../../tui/components/CustomSpinner.js';
+import { ShimmerSpinner } from '../../interactiveCLI/components/CustomSpinner.js';
 
 /**
  * Helper class for rendering various Ink-based prompts

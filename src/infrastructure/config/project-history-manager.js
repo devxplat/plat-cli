@@ -5,7 +5,7 @@
  */
 import persistentCache from '../cache/persistent-cache.js';
 
-class ProjectHistoryManager {
+export class ProjectHistoryManager {
   constructor() {
     this.maxHistory = 20;
   }
@@ -16,7 +16,7 @@ class ProjectHistoryManager {
    */
   async addProject(projectId) {
     if (!projectId || typeof projectId !== 'string') return;
-    
+
     try {
       await persistentCache.addProjectToHistory(projectId);
     } catch (error) {
@@ -32,18 +32,29 @@ class ProjectHistoryManager {
    */
   async getRecentProjects(prefix = '') {
     try {
-      const recentProjects = await persistentCache.getRecentProjects(this.maxHistory);
-      
+      const recentProjects = await persistentCache.getRecentProjects(
+        this.maxHistory
+      );
+
       if (!prefix) return recentProjects;
-      
+
       const lowerPrefix = prefix.toLowerCase();
-      return recentProjects.filter(project => 
+      return recentProjects.filter((project) =>
         project.toLowerCase().startsWith(lowerPrefix)
       );
     } catch (error) {
       // Silent fail - history is not critical
       this.debugLog(`Failed to get recent projects: ${error.message}`);
       return [];
+    }
+  }
+
+  async getProjectCount() {
+    try {
+      const projects = await persistentCache.getRecentProjects(this.maxHistory);
+      return Array.isArray(projects) ? projects.length : 0;
+    } catch {
+      return 0;
     }
   }
 
@@ -68,7 +79,9 @@ class ProjectHistoryManager {
     try {
       // The persistent cache doesn't have a direct method for this yet
       // This would need to be implemented if required
-      this.debugLog(`Remove project from history: ${projectId} (not implemented yet)`);
+      this.debugLog(
+        `Remove project from history: ${projectId} (not implemented yet)`
+      );
     } catch (error) {
       this.debugLog(`Failed to remove project from history: ${error.message}`);
     }

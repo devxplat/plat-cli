@@ -1,6 +1,6 @@
 // Import interfaces
-import ClassicCLI from './src/interfaces/classic/index.js';
-import InteractiveCLI from './src/interfaces/tui/index.js';
+import ClassicCLI from './src/interfaces/classicCLI/index.js';
+import InteractiveCLI from './src/interfaces/interactiveCLI/index.js';
 
 // Import application services
 import CommandCoordinator from './src/application/command-coordinator.js';

@@ -88,7 +88,7 @@ class CLIRouter {
    */
   async launchInteractiveMode() {
     try {
-      const { default: InteractiveCLI } = await import('./tui/index.js');
+      const { default: InteractiveCLI } = await import('./interactiveCLI/index.js');
 
       // Import real coordinator and supporting services
       const { default: CommandCoordinator } = await import(
@@ -151,7 +151,7 @@ class CLIRouter {
 
     try {
       // Re-enabled ClassicCLI with ES6 imports
-      const { default: ClassicCLI } = await import('./classic/index.js');
+      const { default: ClassicCLI } = await import('./classicCLI/index.js');
       const classicCLI = new ClassicCLI();
       await classicCLI.init();
 

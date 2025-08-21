@@ -1,6 +1,6 @@
 import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { colorPalettes } from '../../tui/theme/custom-theme.js';
+import { colorPalettes } from '../../interactiveCLI/theme/custom-theme.js';
 
 /**
  * Standalone Select Prompt using Inquirer
@@ -18,7 +18,7 @@ class SelectPrompt {
   static async prompt({ message, choices, defaultValue }) {
     // Check if we're in a TTY environment that supports raw mode
     const isInteractive = process.stdin.isTTY && process.stdin.setRawMode;
-    
+
     if (!isInteractive) {
       // Fallback to simple console-based selection for non-TTY environments
       console.log(chalk.hex(colorPalettes.dust.primary)(message));
@@ -26,18 +26,20 @@ class SelectPrompt {
       choices.forEach((choice, index) => {
         const isDefault = choice.value === defaultValue;
         const prefix = isDefault ? '>' : ' ';
-        const label = isDefault ? 
-          chalk.hex(colorPalettes.dust.primary).bold(choice.label) : 
-          choice.label;
+        const label = isDefault
+          ? chalk.hex(colorPalettes.dust.primary).bold(choice.label)
+          : choice.label;
         console.log(`${prefix} ${label}`);
       });
       console.log('');
-      console.log(chalk.gray('(Using default selection in non-interactive mode)'));
+      console.log(
+        chalk.gray('(Using default selection in non-interactive mode)')
+      );
       return Promise.resolve(defaultValue);
     }
 
     // Convert choices to inquirer format
-    const inquirerChoices = choices.map(choice => ({
+    const inquirerChoices = choices.map((choice) => ({
       name: choice.label,
       value: choice.value,
       disabled: choice.disabled
@@ -45,7 +47,7 @@ class SelectPrompt {
 
     // Style the message with our primary color
     const styledMessage = chalk.hex(colorPalettes.dust.primary)(message);
-    
+
     // Use inquirer select prompt with styled message
     const answer = await select({
       message: styledMessage,

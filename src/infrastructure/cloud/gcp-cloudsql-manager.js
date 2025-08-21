@@ -153,6 +153,78 @@ class CloudSQLManager {
     }
   }
 
+  // Backwards-compatible APIs expected by tests
+  async getInstance(instanceName) {
+    if (!this.sqladmin) {
+      throw new Error('Authentication not initialized');
+    }
+    try {
+      this.logger.debug(`🔍 Getting details for instance: ${instanceName}`);
+      const response = await this.sqladmin.instances.get({
+        project: this.project,
+        instance: instanceName
+      });
+      const data = response.data || {};
+      if (data.state && data.state !== 'RUNNABLE') {
+        if (this.logger && this.logger.warn) {
+          this.logger.warn(`Instance ${instanceName} state: ${data.state}`);
+        }
+      }
+      return data;
+    } catch (error) {
+      if (this.logger && this.logger.error) {
+        this.logger.error('Failed to get instance:', error.message);
+      }
+      throw error;
+    }
+  }
+
+  async listInstances() {
+    if (!this.sqladmin) {
+      throw new Error('Authentication not initialized');
+    }
+    try {
+      const response = await this.sqladmin.instances.list({
+        project: this.project
+      });
+      const items = response?.data?.items || [];
+      if (items.length === 0 && this.logger && this.logger.warn) {
+        this.logger.warn('No instances found');
+      }
+      return items;
+    } catch (error) {
+      if (this.logger && this.logger.error) {
+        this.logger.error('Failed to list instances:', error.message);
+      }
+      throw error;
+    }
+  }
+
+  async listDatabases(instanceName) {
+    if (!this.sqladmin) {
+      throw new Error('Authentication not initialized');
+    }
+    try {
+      const response = await this.sqladmin.databases.list({
+        project: this.project,
+        instance: instanceName
+      });
+      const items = response?.data?.items || [];
+      if (this.logger && this.logger.debug) {
+        this.logger.debug(`Databases for ${instanceName}: ${items.length}`);
+      }
+      return items;
+    } catch (error) {
+      if (this.logger && this.logger.warn) {
+        this.logger.warn(
+          `Failed to list databases for ${instanceName}:`,
+          error.message
+        );
+      }
+      return [];
+    }
+  }
+
   /**
    * Get comprehensive inventory for multiple instances
    */

@@ -1,9 +1,9 @@
 import React from 'react';
 import { render, Box, Text, Static } from 'ink';
 import { StatusMessage, ProgressBar, ThemeProvider } from '@inkjs/ui';
-import customTheme from '../interfaces/tui/theme/custom-theme.js';
-import { ShimmerSpinner } from '../interfaces/tui/components/CustomSpinner.js';
-import CustomProgressBar from '../interfaces/tui/components/CustomProgressBar.js';
+import customTheme from '../interfaces/interactiveCLI/theme/custom-theme.js';
+import { ShimmerSpinner } from '../interfaces/interactiveCLI/components/CustomSpinner.js';
+import CustomProgressBar from '../interfaces/interactiveCLI/components/CustomProgressBar.js';
 
 /**
  * Modern Progress Tracker using Ink UI components

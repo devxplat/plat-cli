@@ -27,7 +27,10 @@ const SimpleSelect = ({
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   useInput((input, key) => {
-    if (isDisabled || isSubmitted) return;
+    if (isDisabled) return;
+    
+    // After submission, only block Enter key to prevent double submission
+    if (isSubmitted && key.return) return;
 
     if (key.upArrow || input === 'k') {
       const newIndex = selectedIndex > 0 ? selectedIndex - 1 : options.length - 1;
