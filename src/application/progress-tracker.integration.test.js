@@ -15,9 +15,9 @@ test('ProgressTracker formats time correctly', (t) => {
   const progressTracker = new ProgressTracker();
 
   // Test time formatting
-  t.is(progressTracker._formatTime(30), '30s');
-  t.is(progressTracker._formatTime(90), '1m 30s');
-  t.is(progressTracker._formatTime(3700), '1h 1m');
+  t.is(progressTracker._formatTime(30), '00:30');
+  t.is(progressTracker._formatTime(90), '01:30');
+  t.is(progressTracker._formatTime(3700), '01:01:40');
 });
 
 test('ProgressTracker formats bytes correctly', (t) => {

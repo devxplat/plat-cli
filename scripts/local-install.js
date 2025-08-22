@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 try {
@@ -12,6 +12,21 @@ try {
   const packageName = packageJson.name;
 
   console.log(`📦 Installing ${packageName}@${version} globally...`);
+  
+  // Ensure bin directory and file exist
+  const binDir = join(process.cwd(), 'bin');
+  const binFile = join(binDir, 'plat-cli');
+  
+  if (!existsSync(binDir)) {
+    mkdirSync(binDir, { recursive: true });
+    console.log('📁 Created bin directory');
+  }
+  
+  if (!existsSync(binFile)) {
+    const binContent = `#!/usr/bin/env node\n\nimport '../index.js';`;
+    writeFileSync(binFile, binContent);
+    console.log('✅ Created bin/plat-cli executable');
+  }
 
   // Build package first
   console.log('🔨 Building package...');

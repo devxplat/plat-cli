@@ -86,13 +86,14 @@ test('Migration skips users/roles phases when includeUsersRoles is false', async
     }
   };
 
-  // Mock database operations
-  databaseOps.init.resolves();
-  connectionManager.listDatabases.resolves([{ name: 'testdb', sizeBytes: 1000 }]);
-  connectionManager.testConnection.resolves();
-  databaseOps.exportDatabase.resolves({ database: 'testdb', backupFile: '/tmp/backup' });
-  databaseOps.importDatabase.resolves({ database: 'testdb' });
-  connectionManager.closeAllConnections.resolves();
+  // Configure mocks for database operations
+  connectionManager.listDatabases.returns(Promise.resolve([{ name: 'testdb', sizeBytes: 1000 }]));
+  connectionManager.testConnection.returns(Promise.resolve());
+  databaseOps.exportDatabase.returns(Promise.resolve({ database: 'testdb', backupFile: '/tmp/backup' }));
+  databaseOps.importDatabase.returns(Promise.resolve({ database: 'testdb' }));
+  if (connectionManager.closeAllConnections) {
+    connectionManager.closeAllConnections.returns(Promise.resolve());
+  }
 
   await engine.migrate(config);
 
@@ -145,14 +146,15 @@ test('Migration includes users/roles phases when includeUsersRoles is true', asy
     }
   };
 
-  // Mock database operations
-  databaseOps.init.resolves();
+  // Configure mocks for database operations
   databaseOps.applyPermissionsScript = sinon.stub().resolves({ success: true });
-  connectionManager.listDatabases.resolves([{ name: 'testdb', sizeBytes: 1000 }]);
-  connectionManager.testConnection.resolves();
-  databaseOps.exportDatabase.resolves({ database: 'testdb', backupFile: '/tmp/backup' });
-  databaseOps.importDatabase.resolves({ database: 'testdb' });
-  connectionManager.closeAllConnections.resolves();
+  connectionManager.listDatabases.returns(Promise.resolve([{ name: 'testdb', sizeBytes: 1000 }]));
+  connectionManager.testConnection.returns(Promise.resolve());
+  databaseOps.exportDatabase.returns(Promise.resolve({ database: 'testdb', backupFile: '/tmp/backup' }));
+  databaseOps.importDatabase.returns(Promise.resolve({ database: 'testdb' }));
+  if (connectionManager.closeAllConnections) {
+    connectionManager.closeAllConnections.returns(Promise.resolve());
+  }
 
   await engine.migrate(config);
 
@@ -191,7 +193,14 @@ test('Migration handles users/roles errors gracefully', async (t) => {
     dbPermissions: [],
     memberships: []
   });
+  sinon.stub(engine.usersRolesExtractor, 'extractDatabasePermissions').resolves({
+    database: 'testdb',
+    schemaPermissions: [],
+    tablePermissions: [],
+    sequencePermissions: []
+  });
   sinon.stub(engine.usersRolesExtractor, 'generateCreateScript').resolves('/tmp/users.sql');
+  sinon.stub(engine.usersRolesExtractor, 'generatePermissionsScript').resolves('/tmp/permissions.sql');
   sinon.stub(engine.usersRolesExtractor, 'applyUsersAndRoles').resolves({
     success: true,
     successCount: 0,
@@ -201,6 +210,7 @@ test('Migration handles users/roles errors gracefully', async (t) => {
       { statement: 'CREATE ROLE test2', error: 'permission denied' }
     ]
   });
+  sinon.stub(engine.usersRolesExtractor, 'cleanup').resolves();
 
   const config = {
     source: { project: 'src-proj', instance: 'src-inst' },
@@ -211,13 +221,14 @@ test('Migration handles users/roles errors gracefully', async (t) => {
     }
   };
 
-  // Mock database operations to continue despite user errors
-  databaseOps.init.resolves();
-  connectionManager.listDatabases.resolves([{ name: 'testdb', sizeBytes: 1000 }]);
-  connectionManager.testConnection.resolves();
-  databaseOps.exportDatabase.resolves({ database: 'testdb', backupFile: '/tmp/backup' });
-  databaseOps.importDatabase.resolves({ database: 'testdb' });
-  connectionManager.closeAllConnections.resolves();
+  // Configure mocks for database operations
+  connectionManager.listDatabases.returns(Promise.resolve([{ name: 'testdb', sizeBytes: 1000 }]));
+  connectionManager.testConnection.returns(Promise.resolve());
+  databaseOps.exportDatabase.returns(Promise.resolve({ database: 'testdb', backupFile: '/tmp/backup' }));
+  databaseOps.importDatabase.returns(Promise.resolve({ database: 'testdb' }));
+  if (connectionManager.closeAllConnections) {
+    connectionManager.closeAllConnections.returns(Promise.resolve());
+  }
 
   // Migration should complete even with user/role errors
   const result = await engine.migrate(config);

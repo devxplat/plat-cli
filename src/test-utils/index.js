@@ -64,6 +64,8 @@ export const createMockProgressTracker = () => ({
   setPhase: sinon.stub().returnsThis(),
   status: sinon.stub().returnsThis(),
   getCurrentProgress: sinon.stub().returns(0),
+  startPredictiveProgress: sinon.stub().returnsThis(),
+  stopPredictiveProgress: sinon.stub().returnsThis(),
 
   // Private formatting methods that tests access
   _formatTime: sinon.stub().callsFake((seconds) => {
@@ -159,6 +161,7 @@ export const createMockDatabaseOps = () => ({
   executeQuery: sinon.stub().resolves({ rows: [] }),
   createBackup: sinon.stub().resolves({ success: true }),
   runMigration: sinon.stub().resolves({ success: true }),
+  applyPermissionsScript: sinon.stub().resolves({ success: true }),
   formatBytes: sinon.stub().callsFake((bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;

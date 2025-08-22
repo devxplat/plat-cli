@@ -37,6 +37,7 @@ health-check.sh
 uninstall-debian.sh
 verify-config.js
 scripts/
+.husky/
 
 # Test files
 test-*.txt
@@ -76,6 +77,7 @@ node_modules/.cache/
 # Build artifacts
 dist/
 build/
+*.tgz
 
 # Misc development files
 .cursorrules*
@@ -90,3 +92,9 @@ NPM_*.md
 DEVELOPER_GUIDE.md
 QUICK_REFERENCE.md
 SETUP_COMPLETE.md
+
+# Local development files
+CLAUDE.local.md
+CLAUDE.md
+*.local.*
+local_docs/

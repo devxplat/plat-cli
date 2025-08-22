@@ -1,1 +1,4 @@
 test/snapshots/**/*.md
+local_docs/
+CLAUDE.local.md
+README.md

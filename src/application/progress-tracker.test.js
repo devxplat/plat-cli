@@ -62,12 +62,11 @@ test('ProgressTracker formats time correctly', (t) => {
 
   // Test internal time formatting if method is exposed
   if (typeof tracker._formatTime === 'function') {
-    t.is(tracker._formatTime(30), '30s');
-    t.is(tracker._formatTime(90), '1m 30s');
-    // Test hour formatting (3700s = 1h 1m 40s, but formatter might round)
+    t.is(tracker._formatTime(30), '00:30');
+    t.is(tracker._formatTime(90), '01:30');
+    // Test hour formatting (3700s = 1h 1m 40s)
     const hourResult = tracker._formatTime(3700);
-    t.true(hourResult.includes('1h'));
-    t.true(hourResult.includes('m'));
+    t.is(hourResult, '01:01:40');
   } else {
     t.pass(); // Skip if method is not exposed
   }
