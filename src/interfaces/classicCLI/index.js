@@ -856,7 +856,7 @@ class ClassicCLI {
     console.log(colors.primary('🎨 Launching interactive CLI...'));
 
     try {
-      const { default: InteractiveCLI } = await import('../tui/index.js');
+      const { default: InteractiveCLI } = await import('../interactiveCLI/index.js');
       const interactiveCLI = new InteractiveCLI({
         coordinator: this.coordinator,
         logger: this.logger,

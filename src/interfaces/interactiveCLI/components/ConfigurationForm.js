@@ -15,6 +15,7 @@ import MigrationPatternDetector from './MigrationPatternDetector.js';
 import UserRoleSelector from './UserRoleSelector.js';
 // import CredentialsConfiguration from './CredentialsConfiguration.js'; // Removed - now integrated in ProjectScanner
 import { getAvailableStrategies, getConflictResolutionOptions } from '../../../domain/strategies/migration-strategies.js';
+import { getNavigationStackManager, resetNavigationStackManager } from '../../../domain/navigation/navigation-stack-manager.js';
 
 // Use custom theme for consistent styling
 
@@ -25,8 +26,8 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
   const [formData, setFormData] = useState({});
   const [error, setError] = useState(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [navigationHistory, setNavigationHistory] = useState([{}]); // Track navigation history for back navigation
-  const [stepHistory, setStepHistory] = useState([0]); // Track step index history for proper back navigation
+  const [navigationStack] = useState(() => getNavigationStackManager());
+  const [isNavigating, setIsNavigating] = useState(false); // Prevent double navigation
 
   // Get all configuration steps
   const getAllSteps = () => {
@@ -227,9 +228,37 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
     return visible;
   };
 
+  // Initialize navigation stack on mount and cleanup on unmount
+  useEffect(() => {
+    // Push initial state to navigation stack
+    navigationStack.clear();
+    navigationStack.push({
+      component: 'ConfigurationForm',
+      step: 'initial',
+      subStep: null,
+      data: {},
+      metadata: {
+        stepIndex: 0,
+        toolName
+      }
+    });
+
+    return () => {
+      // Clear navigation stack on unmount
+      navigationStack.clear();
+    };
+  }, []);
+
   // Track when form data changes (useful for debugging)
   useEffect(() => {
-    // This effect can be used for debugging or future enhancements
+    // Update current state in navigation stack when form data changes
+    const currentState = navigationStack.peek();
+    if (currentState && currentState.component === 'ConfigurationForm') {
+      navigationStack.replace({
+        ...currentState,
+        data: formData
+      });
+    }
   }, [formData]);
 
   // Get current step
@@ -250,38 +279,71 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
 
   // Handle keyboard navigation
   useInput((input, key) => {
-    if (key.escape) {
+    if (key.escape && !isNavigating) {
       handleBack();
     }
   });
   
   // Handle going back to previous step
   const handleBack = () => {
-    if (stepHistory.length > 1) {
-      // Remove current step from history
-      const newStepHistory = [...stepHistory];
-      newStepHistory.pop();
+    setIsNavigating(true);
+    
+    // First, clean up any child component states from the navigation stack
+    let childComponentsRemoved = false;
+    while (navigationStack.peek() && navigationStack.peek().component !== 'ConfigurationForm') {
+      navigationStack.pop();
+      childComponentsRemoved = true;
+    }
+    
+    // If we removed child components, we're still in the same ConfigurationForm step
+    // Don't go back further, just update the UI
+    if (childComponentsRemoved) {
+      setTimeout(() => setIsNavigating(false), 100);
+      return;
+    }
+    
+    // Check if we can go back in the navigation stack
+    if (navigationStack.canGoBack()) {
+      // Pop current ConfigurationForm state
+      navigationStack.pop();
       
-      // Get the previous step index
-      const previousStepIndex = newStepHistory[newStepHistory.length - 1];
-      
-      // Remove current state from navigation history
-      const newNavigationHistory = [...navigationHistory];
-      newNavigationHistory.pop();
+      // Clean up any child component states that might be lingering
+      while (navigationStack.peek() && navigationStack.peek().component !== 'ConfigurationForm') {
+        navigationStack.pop();
+      }
       
       // Get the previous state
-      const previousState = newNavigationHistory[newNavigationHistory.length - 1] || {};
+      const previousState = navigationStack.peek();
       
-      // Update all states
-      setStepHistory(newStepHistory);
-      setNavigationHistory(newNavigationHistory);
-      setFormData(previousState);
-      setCurrentStepIndex(previousStepIndex);
-      setError(null);
+      if (previousState && previousState.component === 'ConfigurationForm') {
+        // Restore form data first
+        const restoredData = previousState.data || {};
+        setFormData(restoredData);
+        
+        // Find the correct step index based on the step key
+        const stepKey = previousState.step;
+        const visibleStepsWithData = getAllSteps().filter(
+          step => !step.condition || step.condition(restoredData)
+        );
+        const correctStepIndex = visibleStepsWithData.findIndex(
+          step => step.key === stepKey
+        );
+        
+        // Use the found index or fall back to saved index
+        setCurrentStepIndex(
+          correctStepIndex !== -1 ? correctStepIndex : (previousState.metadata?.stepIndex || 0)
+        );
+        setError(null);
+      } else {
+        // No valid previous state, cancel the form
+        onCancel?.();
+      }
     } else {
       // We're at the first step, cancel the form
       onCancel?.();
     }
+    
+    setTimeout(() => setIsNavigating(false), 100);
   };
 
   // Handle moving to next step
@@ -324,12 +386,19 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
         nextStepIndex = currentStepIndex + 1;
       }
       
-      // Save current state and step index to history
-      const newNavigationHistory = [...navigationHistory, { ...formData }];
-      const newStepHistory = [...stepHistory, nextStepIndex];
+      // Push new state to navigation stack
+      navigationStack.push({
+        component: 'ConfigurationForm',
+        step: visibleSteps[nextStepIndex]?.key || 'unknown',
+        subStep: null,
+        data: { ...formData },
+        metadata: {
+          stepIndex: nextStepIndex,
+          toolName,
+          label: visibleSteps[nextStepIndex]?.label
+        }
+      });
       
-      setNavigationHistory(newNavigationHistory);
-      setStepHistory(newStepHistory);
       setCurrentStepIndex(nextStepIndex);
     }
     setError(null);
@@ -586,15 +655,31 @@ const ConfigurationForm = ({ toolName, onComplete, onCancel }) => {
                 ? 'Source GCP Project' 
                 : 'Target GCP Project',
               initialData: formData[currentStep.key], // Pass saved data for restoration
+              navigationStack, // Pass navigation stack for unified navigation
+              parentComponent: 'ConfigurationForm',
+              parentStep: currentStep.key,
               onComplete: (data) => {
+                // When ProjectScanner completes, update form data and move to next step
                 handleInputChange(currentStep.key, data);
+                // Clean up navigation stack - remove all child component states
+                while (navigationStack.peek()?.component !== 'ConfigurationForm') {
+                  navigationStack.pop();
+                }
                 handleNext();
               },
               onCancel: (preservedData) => {
-                // Save any preserved data before going back
-                if (preservedData) {
+                // Handle cancellation from ProjectScanner
+                // Clean up navigation stack - remove all child component states
+                while (navigationStack.peek()?.component !== 'ConfigurationForm') {
+                  navigationStack.pop();
+                }
+                
+                if (preservedData && preservedData.instances && preservedData.instances.length > 0) {
+                  // If we have preserved data with instances, save it but go back
                   handleInputChange(currentStep.key, preservedData);
                 }
+                
+                // Always go back to previous step when canceling from ProjectScanner
                 handleBack();
               }
             });

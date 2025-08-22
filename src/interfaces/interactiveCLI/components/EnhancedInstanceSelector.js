@@ -18,7 +18,10 @@ const EnhancedInstanceSelector = ({
   initialSelections = [],
   initialCredentials = {},
   initialCredentialsMode = 'individual',
-  cache = null // Pass PersistentCache instance for saving/loading credentials
+  cache = null, // Pass PersistentCache instance for saving/loading credentials
+  navigationStack = null,
+  parentComponent = null,
+  parentStep = null
 }) => {
   // Initialize with provided initial state or defaults
   const [selectedInstances, setSelectedInstances] = useState(() => {
@@ -58,8 +61,119 @@ const EnhancedInstanceSelector = ({
     return { user: 'postgres', password: '' };
   });
   const [editingField, setEditingField] = useState(null); // Track which field is being edited
+  const [hasNavigationStack] = useState(() => !!navigationStack); // Check if navigation stack is available
+  const [isRestoring, setIsRestoring] = useState(false); // Flag to prevent re-pushing during restoration
   
   const { enableFocus, disableFocus, focusNext, focusPrevious } = useFocusManager();
+
+  // Update navigation stack when step changes
+  useEffect(() => {
+    if (hasNavigationStack && navigationStack && !isRestoring) {
+      const currentState = navigationStack.peek();
+      
+      // Don't push if we're already at this exact state
+      if (currentState?.component === 'EnhancedInstanceSelector' && currentState?.subStep === currentStep) {
+        return;
+      }
+      
+      // Push database step to stack when transitioning to it from instances
+      if (currentStep === 'databases') {
+        // Only push if we're transitioning from instances to databases
+        // This ensures we have a state to pop when going back
+        if (!currentState || currentState.component !== 'EnhancedInstanceSelector' || currentState.subStep !== 'databases') {
+          navigationStack.push({
+            component: 'EnhancedInstanceSelector',
+            step: parentStep || 'instanceSelector',
+            subStep: currentStep,
+            data: {
+              selectedInstances: Array.from(selectedInstances),
+              credentials,
+              credentialsMode,
+              sameCredentials,
+              databaseSelection,
+              selectedDatabases,
+              selectedDatabasesList: Object.keys(selectedDatabasesList).reduce((acc, key) => {
+                acc[key] = Array.from(selectedDatabasesList[key] || new Set());
+                return acc;
+              }, {}),
+              availableDatabases,
+              saveCredentialsState,
+              showCredentials,
+              focusedIndex,
+              focusedField,
+              isSource,
+              currentStep,
+              formData: currentState?.data?.formData // Preserve parent form data
+            },
+            metadata: {
+              label: `${label} - ${currentStep}`,
+              parentComponent,
+              stepIndex: currentState?.metadata?.stepIndex
+            }
+          });
+        }
+      }
+    }
+  }, [currentStep]); // Only track currentStep changes
+
+  // Restore state from navigation stack if available
+  useEffect(() => {
+    if (hasNavigationStack && navigationStack) {
+      const savedState = navigationStack.findComponentState('EnhancedInstanceSelector');
+      if (savedState && savedState.data && !isRestoring) {
+        setIsRestoring(true);
+        
+        // Restore all state
+        const data = savedState.data;
+        if (data.selectedInstances) {
+          setSelectedInstances(new Set(data.selectedInstances));
+        }
+        if (data.credentials) {
+          setCredentials(data.credentials);
+        }
+        if (data.credentialsMode) {
+          setCredentialsMode(data.credentialsMode);
+        }
+        if (data.sameCredentials) {
+          setSameCredentials(data.sameCredentials);
+        }
+        if (data.currentStep) {
+          setCurrentStep(data.currentStep);
+        }
+        if (data.databaseSelection) {
+          setDatabaseSelection(data.databaseSelection);
+        }
+        if (data.selectedDatabases !== undefined) {
+          setSelectedDatabases(data.selectedDatabases);
+        }
+        if (data.selectedDatabasesList) {
+          // Convert back to Sets
+          const restoredList = {};
+          Object.keys(data.selectedDatabasesList).forEach(key => {
+            restoredList[key] = new Set(data.selectedDatabasesList[key]);
+          });
+          setSelectedDatabasesList(restoredList);
+        }
+        if (data.availableDatabases) {
+          setAvailableDatabases(data.availableDatabases);
+        }
+        if (data.saveCredentialsState) {
+          setSaveCredentialsState(data.saveCredentialsState);
+        }
+        if (data.showCredentials) {
+          setShowCredentials(data.showCredentials);
+        }
+        if (data.focusedIndex !== undefined) {
+          setFocusedIndex(data.focusedIndex);
+        }
+        if (data.focusedField) {
+          setFocusedField(data.focusedField);
+        }
+        
+        setTimeout(() => setIsRestoring(false), 100);
+      }
+    }
+  }, []);
 
   // Initialize credentials for instances and load saved ones
   useEffect(() => {
@@ -359,51 +473,81 @@ const EnhancedInstanceSelector = ({
     instances, isSource, cache
   ]);
 
-  // Create input handler with dependencies
-  const handleInput = useCallback((input, key) => {
-    // Handle escape
-    if (key.escape) {
-      if (editingField) {
-        // Just exit editing mode, stay on the same screen
-        setEditingField(null);
+  // Handle back navigation
+  const handleBack = useCallback(() => {
+    if (editingField) {
+      // Just exit editing mode, stay on the same screen
+      setEditingField(null);
+      return;
+    }
+    
+    if (hasNavigationStack && navigationStack) {
+      // Check if we're navigating within the component
+      if (currentStep === 'databases') {
+        // We're in databases step, need to go back to instances
+        const currentState = navigationStack.peek();
+        
+        // Check if the current state is our databases step
+        if (currentState?.component === 'EnhancedInstanceSelector' && currentState?.subStep === 'databases') {
+          // Pop the database step from stack
+          navigationStack.pop();
+        }
+        
+        // Go back to instance selection - stay within the component
+        setCurrentStep('instances');
+        setFocusedField('mode');
+        // Important: return here to prevent calling onCancel
+        // We're just moving between steps within the same component
         return;
-      } else if (currentStep === 'databases') {
+      }
+      
+      // Now handle going back from instances to parent
+      const currentState = navigationStack.peek();
+      
+      if (currentStep === 'instances') {
+        // We're in the instances step and want to go back to parent
+        // Pop our state from stack if it exists
+        if (currentState?.component === 'EnhancedInstanceSelector') {
+          navigationStack.pop();
+        }
+        
+        // Signal to parent that we're canceling from instances step
+        // Pass a flag to indicate this is a full cancel, not internal navigation
+        onCancel?.({ fromStep: 'instances' });
+      } else {
+        // Shouldn't reach here, but just in case
+        onCancel?.();
+      }
+    } else {
+      // Fallback to old behavior without navigation stack
+      if (currentStep === 'databases') {
         // Go back to instance selection
         setCurrentStep('instances');
         setFocusedField('mode');
+        // Don't call onCancel - we're just navigating internally
         return;
       } else {
-        // Only go back if not editing
-        // Preserve current state when canceling
-        const preservedData = {
-          project: instances[0]?.project,
-          instances: instances.filter(inst => 
-            selectedInstances.has(`${inst.project}:${inst.instance}`)
-          ).map(inst => ({
-            ...inst,
-            credentials: credentialsMode === 'same' ? sameCredentials :
-                        credentialsMode === 'individual' ? credentials[`${inst.project}:${inst.instance}`] :
-                        { user: process.env[`PGUSER_${inst.instance.toUpperCase().replace(/-/g, '_')}`] || 'postgres',
-                          password: process.env[`PGPASSWORD_${inst.instance.toUpperCase().replace(/-/g, '_')}`] },
-            databases: currentStep === 'databases' && databaseSelection === 'specific' ? 
-                      selectedDatabases.split(',').map(db => db.trim()).filter(db => db) : 
-                      databaseSelection === 'all' ? 'all' : undefined
-          })),
-          credentialsMode,
-          totalFound: instances.length,
-          totalSelected: selectedInstances.size,
-          isSource,
-          // Preserve selection state for restoration
-          initialSelections: Array.from(selectedInstances).map(key => {
-            const [project, instance] = key.split(':');
-            return { project, instance };
-          }),
-          initialCredentials: credentialsMode === 'same' ? { all: sameCredentials } : credentials,
-          initialCredentialsMode: credentialsMode
-        };
-        onCancel?.(preservedData);
-        return;
+        // We're at instances step, cancel back to parent
+        onCancel?.({ fromStep: 'instances' });
       }
+    }
+  }, [editingField, currentStep, hasNavigationStack, navigationStack, instances, selectedInstances, 
+      credentialsMode, sameCredentials, credentials, databaseSelection, selectedDatabases, 
+      isSource, onCancel]);
+
+  // Create input handler with dependencies
+  const handleInput = useCallback((input, key) => {
+    // Handle escape - but only if we're the active component
+    if (key.escape) {
+      // Check if we're the current component on the navigation stack
+      const currentState = hasNavigationStack && navigationStack ? navigationStack.peek() : null;
+      const isActive = !currentState || currentState.component === 'EnhancedInstanceSelector' || 
+                      (currentState.component === 'ProjectScanner' && currentStep === 'instances');
+      
+      if (isActive) {
+        handleBack();
+      }
+      return;
     }
 
     // Don't process navigation keys when editing

@@ -23,7 +23,10 @@ const ProjectScanner = ({
   filterByVersion = null,
   isSource = true,
   requireCredentials = false,
-  initialData = null
+  initialData = null,
+  navigationStack = null,
+  parentComponent = null,
+  parentStep = null
 }) => {
   const [projectName, setProjectName] = useState(initialData?.project || '');
   const [instances, setInstances] = useState(initialData?.instances || []);
@@ -37,12 +40,25 @@ const ProjectScanner = ({
   const [loadingMessage, setLoadingMessage] = useState(
     'Loading available GCP projects...'
   ); // Dynamic loading message
+  const [hasNavigationStack] = useState(() => !!navigationStack); // Check if navigation stack is available
+  const [isRestoringState, setIsRestoringState] = useState(false); // Flag to prevent re-pushing during restoration
 
   // Load autocomplete suggestions on component mount
   useEffect(() => {
     // Skip loading if we have initial data (we're returning from navigation)
     if (initialData && initialData.instances?.length > 0) {
+      setIsRestoringState(true);
       setCurrentStep('selection');
+      // If we have navigation stack, restore state
+      if (hasNavigationStack && navigationStack) {
+        const currentState = navigationStack.findComponentState('ProjectScanner');
+        if (currentState && currentState.data) {
+          setProjectName(currentState.data.projectName || initialData.project || '');
+          setInstances(currentState.data.instances || initialData.instances || []);
+          setCurrentStep(currentState.subStep || 'selection');
+        }
+      }
+      setTimeout(() => setIsRestoringState(false), 100);
       return;
     }
     
@@ -124,9 +140,105 @@ const ProjectScanner = ({
     };
   }, []);
 
+  // Update navigation stack when step changes
+  useEffect(() => {
+    if (hasNavigationStack && navigationStack && currentStep !== 'loading' && !isRestoringState) {
+      // Check if we're already in the stack
+      const currentState = navigationStack.peek();
+      if (currentState?.component === 'ProjectScanner' && currentState?.subStep === currentStep) {
+        // Already at this step, update data only
+        navigationStack.replace({
+          ...currentState,
+          data: {
+            projectName,
+            instances,
+            suggestions,
+            error,
+            isSource
+          }
+        });
+      } else if (currentState?.component !== 'ProjectScanner' || currentState?.subStep !== currentStep) {
+        // Only push if we're not the current component or if the substep changed
+        // and we're not in the process of restoring state
+        navigationStack.push({
+          component: 'ProjectScanner',
+          step: parentStep || 'projectScanner',
+          subStep: currentStep,
+          data: {
+            projectName,
+            instances,
+            suggestions,
+            error,
+            isSource,
+            formData: currentState?.data // Preserve parent form data
+          },
+          metadata: {
+            label: `${label} - ${currentStep}`,
+            parentComponent,
+            stepIndex: currentState?.metadata?.stepIndex
+          }
+        });
+      }
+    }
+  }, [currentStep, projectName, instances, error]);
+
   // Handle keyboard navigation
   useInput((input, key) => {
-    if (key.escape) {
+    // Only handle ESC if we're not in a child component
+    const currentState = hasNavigationStack && navigationStack ? navigationStack.peek() : null;
+    const isInChildComponent = currentState && currentState.component !== 'ProjectScanner' && currentState.component !== 'ConfigurationForm';
+    
+    if (key.escape && !isInChildComponent) {
+      handleBack();
+    }
+
+    // Add cache refresh functionality with Ctrl+U or Ctrl+R
+    if ((key.ctrl && input === 'u') || (key.ctrl && input === 'r')) {
+      if (currentStep === 'input') {
+        refreshCache();
+      }
+    }
+  });
+
+  // Handle back navigation
+  const handleBack = () => {
+    if (hasNavigationStack && navigationStack) {
+      // Use navigation stack for back navigation
+      const currentState = navigationStack.peek();
+      
+      if (currentState?.component === 'EnhancedInstanceSelector') {
+        // Child component is active, let it handle its own navigation
+        // Don't interfere with the navigation stack here
+        return;
+      }
+      
+      if (currentState?.component === 'ProjectScanner') {
+        if (currentStep === 'selection') {
+          // Pop the selection state and go back to input
+          navigationStack.pop();
+          setCurrentStep('input');
+          setError(null);
+        } else if (currentStep === 'input') {
+          // Pop our state and go back to parent component
+          navigationStack.pop();
+          
+          // Preserve current state if we have instances
+          const preservedData = instances.length > 0 ? {
+            project: projectName,
+            instances,
+            totalFound: instances.length,
+            totalSelected: 0,
+            isSource,
+            currentStep
+          } : null;
+          onCancel?.(preservedData);
+        }
+      } else {
+        // Not our state, just cancel
+        onCancel?.();
+      }
+    } else {
+      // Fallback to old behavior without navigation stack
       if (currentStep !== 'input') {
         // Preserve current state when going back
         const preservedData = {
@@ -146,26 +258,19 @@ const ProjectScanner = ({
           setError(null);
         }
       } else {
-        // Preserve state when canceling from input
-        const preservedData = {
+        // Preserve state when canceling from input if we have instances
+        const preservedData = instances.length > 0 ? {
           project: projectName,
           instances,
           totalFound: instances.length,
           totalSelected: 0,
           isSource,
           currentStep: 'input'
-        };
+        } : null;
         onCancel?.(preservedData);
       }
     }
-
-    // Add cache refresh functionality with Ctrl+U or Ctrl+R
-    if ((key.ctrl && input === 'u') || (key.ctrl && input === 'r')) {
-      if (currentStep === 'input') {
-        refreshCache();
-      }
-    }
-  });
+  };
 
   // Function to refresh cache
   const refreshCache = async () => {
@@ -486,12 +591,27 @@ const ProjectScanner = ({
         if (requireCredentials) {
           return React.createElement(EnhancedInstanceSelector, {
             instances,
+            navigationStack, // Pass navigation stack to child
+            parentComponent: 'ProjectScanner',
+            parentStep: parentStep, // Pass through the parent step from ConfigurationForm
             onSubmit: handleEnhancedSelection,
-            onCancel: (preservedData) => {
-              if (preservedData) {
-                // If enhanced selector preserved data, pass it up
-                onCancel?.(preservedData);
+            onCancel: (cancelInfo) => {
+              // When EnhancedInstanceSelector cancels back to us
+              // Clean up its states from the navigation stack
+              if (hasNavigationStack && navigationStack) {
+                while (navigationStack.peek()?.component === 'EnhancedInstanceSelector') {
+                  navigationStack.pop();
+                }
+              }
+              
+              // Check if this is a full cancel from instances step
+              // If it has fromStep, it means user pressed ESC on instances (not databases)
+              if (cancelInfo && cancelInfo.fromStep === 'instances') {
+                // Go back to input step
+                setCurrentStep('input');
+                setError(null);
               } else {
+                // This shouldn't happen with current flow, but handle gracefully
                 setCurrentStep('input');
                 setError(null);
               }
