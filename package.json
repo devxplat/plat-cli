@@ -1,7 +1,7 @@
 {
   "name": "plat-cli",
   "description": "Platform Engineering DevEx CLI - Simplify complex cloud operations with developer experience in mind",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "epicvinny <visuzano@hotmail.com> ()",
   "bugs": {
     "url": "https://github.com/epicvinny/plat-cli/issues",
