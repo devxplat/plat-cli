@@ -17,7 +17,31 @@ if (!existsSync(binDir)) {
 }
 
 // Create executable file with LF line endings
-const binContent = `#!/usr/bin/env node\n\nimport '../index.js';\n`;
+const binContent = `#!/usr/bin/env node
+
+// Import CLI Router to handle mode detection and routing
+import CLIRouter from '../src/interfaces/cli-router.js';
+
+// Main entry point for plat-cli
+async function main() {
+  try {
+    // Create CLI router instance
+    const router = new CLIRouter();
+    
+    // Get command line arguments (skip 'node' and script name)
+    const args = process.argv.slice(2);
+    
+    // Route to appropriate CLI interface
+    await router.route(args);
+  } catch (error) {
+    console.error('CLI startup error:', error.message);
+    process.exit(1);
+  }
+}
+
+// Start the CLI
+main();
+`;
 
 // Write file with explicit LF line endings
 writeFileSync(binFile, binContent.replace(/\r\n/g, '\n'));
