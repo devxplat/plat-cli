@@ -1,3 +1,20 @@
 #!/usr/bin/env node
 
-import '../index.js';
+import PlatCli from '../index.js';
+
+const cli = new PlatCli();
+const args = process.argv.slice(2);
+
+if (args.length === 0 || args[0] === '--interactive' || args[0] === '-i') {
+  // Launch interactive CLI when no args or --interactive flag
+  cli.runInteractiveCLI().catch(error => {
+    console.error('Error:', error.message);
+    process.exit(1);
+  });
+} else {
+  // Launch classic CLI for commands
+  cli.runClassicCLI(process.argv).catch(error => {
+    console.error('Error:', error.message);
+    process.exit(1);
+  });
+}

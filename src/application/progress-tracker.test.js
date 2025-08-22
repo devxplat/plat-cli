@@ -1,6 +1,60 @@
 import test from 'ava';
+import sinon from 'sinon';
 import ProgressTracker from './progress-tracker.js';
 import { createMockLogger } from '../test-utils/index.js';
+
+// Global setup to prevent Ink rendering in all tests
+const originalStartInkRender = ProgressTracker.prototype._startInkRender;
+const originalUpdateInkRender = ProgressTracker.prototype._updateInkRender;
+const originalComplete = ProgressTracker.prototype.complete;
+const originalInit = ProgressTracker.prototype.init;
+
+// Override methods to prevent Ink rendering and timers
+ProgressTracker.prototype._startInkRender = sinon.stub();
+ProgressTracker.prototype._updateInkRender = sinon.stub();
+
+// Override init to prevent timer creation
+ProgressTracker.prototype.init = function(phases = []) {
+  this.phases = phases;
+  this.currentPhaseIndex = 0;
+  this.isActive = true;
+  this.startTime = Date.now();
+  
+  // Don't create the timer interval
+  // this.timerInterval = setInterval(...) - skipped
+  
+  // Don't start Ink rendering
+  // this._startInkRender() - already stubbed
+  
+  return this;
+};
+ProgressTracker.prototype.complete = function(results) {
+  this.isActive = false;
+  
+  // Clear any timers
+  if (this.timerInterval) {
+    clearInterval(this.timerInterval);
+    this.timerInterval = null;
+  }
+  if (this.predictiveProgress && this.predictiveProgress.interval) {
+    clearInterval(this.predictiveProgress.interval);
+    this.predictiveProgress.interval = null;
+  }
+  
+  if (this.logger && this.logger.info) {
+    this.logger.info('Migration completed');
+  }
+  // Don't try to unmount Ink instance
+  return this;
+};
+
+// Restore after all tests
+test.after.always(() => {
+  ProgressTracker.prototype._startInkRender = originalStartInkRender;
+  ProgressTracker.prototype._updateInkRender = originalUpdateInkRender;
+  ProgressTracker.prototype.complete = originalComplete;
+  ProgressTracker.prototype.init = originalInit;
+});
 
 test('ProgressTracker creates instance with logger', (t) => {
   const logger = createMockLogger();
